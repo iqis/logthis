@@ -8,6 +8,36 @@ guard_level_type <- function(level){
   }
 }
 
+# Internal function for processing level numbers in limits
+make_level_number <- function(level){
+  if (is.null(level)) {
+    return(NULL)
+  } else if (is.numeric(level)) {
+    return(round(level))
+  } else if (inherits(level, "log_event_level")) {
+    return(as.numeric(attr(level, "level_number")))
+  } else if (inherits(level, "log_event")) {
+    return(level$level_number)
+  } else {
+    stop("Level must be <numeric>, <log_event_level>, or <log_event>")
+  }
+}
+
+# Alias for backward compatibility with tests - returns simple numeric
+normalize_limit <- function(level){
+  if (is.null(level)) {
+    return(NULL)
+  } else if (is.numeric(level)) {
+    return(round(level))
+  } else if (inherits(level, "log_event_level")) {
+    return(as.numeric(attr(level, "level_number")))
+  } else if (inherits(level, "log_event")) {
+    return(level$level_number)
+  } else {
+    stop("Level must be <numeric>, <log_event_level>, or <log_event>")
+  }
+}
+
 level_number <- function(level){
   if (is.numeric(level)) {
     level_number <- level

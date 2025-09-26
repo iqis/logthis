@@ -13,20 +13,27 @@ log_event_level <- function(level_class, level_number){
   `if`(missing(level_class) | is.null(level_class) | is.na(level_class) | level_class == "",
        stop("level_class must be non empty."))
 
-  level_number <- level_number(level_number)
+  # Get the structured level_number for validation but extract raw value for storage
+  validated_level_number <- level_number(level_number)
+  raw_level_number <- as.numeric(validated_level_number)
 
   structure(
     function(message = "", ...){
-      structure(list(message = message,
-                     time = Sys.time(),
-                     level_class = level_class,
-                     level_number = level_number,
-                     tags = c(),
-                     ...),
-                class = c(level_class,
-                          "log_event"))
+      event_data <- list(message = message,
+                        time = Sys.time(),
+                        level = level_class,
+                        level_number = raw_level_number)
+      
+      # Add extra arguments
+      extra_args <- list(...)
+      if (length(extra_args) > 0) {
+        event_data <- c(event_data, extra_args)
+      }
+      
+      structure(event_data,
+                class = c(level_class, "log_event"))
     },
-    level_number = level_number,
+    level_number = raw_level_number,  # Store the raw numeric instead of structured object
     level_class = level_class,
     class = c("log_event_level",
               "function"))

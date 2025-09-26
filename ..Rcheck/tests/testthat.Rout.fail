@@ -19,9 +19,10 @@ Type 'q()' to quit R.
 > library(logthis)
 > 
 > test_check("logthis")
-2025-09-26 15:19:28.869862 [TEST] Testing things.
-2025-09-26 15:19:28.869862 [TEST] Testing things.
-[ FAIL 15 | WARN 2 | SKIP 0 | PASS 48 ]
+2025-09-26 15:22:01.32302 [ERROR] Passes both filters
+2025-09-26 15:22:01.348274 [TEST] Testing things.
+2025-09-26 15:22:01.348274 [TEST] Testing things.
+[ FAIL 16 | WARN 2 | SKIP 0 | PASS 63 ]
 
 ══ Failed tests ════════════════════════════════════════════════════════════════
 ── Failure ('test-log_event_levels.R:23:3'): log_event_level() rounds `level_number` ──
@@ -53,62 +54,47 @@ Attributes: < Lengths: 1, 0 >
 Attributes: < names for target but not for current >
 Attributes: < current is not list-like >
 target is level_number, current is numeric
-── Error ('test-logger.R:29:5'): logger print method shows configuration ───────
-Error in `make_level_number(lower)`: could not find function "make_level_number"
-Backtrace:
-    ▆
- 1. ├─... %>% with_limits(lower = NOTE, upper = ERROR) at test-logger.R:29:5
- 2. ├─logthis::with_limits(., lower = NOTE, upper = ERROR)
- 3. └─logthis:::with_limits.logger(., lower = NOTE, upper = ERROR)
+── Failure ('test-logger.R:37:5'): logger print method shows configuration ─────
+any(grepl("<logger>", output)) is not TRUE
+
+`actual`:   FALSE
+`expected`: TRUE 
+── Failure ('test-logger.R:40:5'): logger print method shows configuration ─────
+any(grepl("Level limits:", output)) is not TRUE
+
+`actual`:   FALSE
+`expected`: TRUE 
 ── Failure ('test-logger.R:64:5'): logger()() can map receivers to event and return event for chaining ──
 attr(result, "receiver_results") not equal to list(test_event, NULL).
 target is NULL, current is list
 ── Failure ('test-logger.R:75:5'): logger()() can map receivers to event and return event for chaining ──
 attr(result2, "receiver_results") not equal to list(test_event, test_event).
 target is NULL, current is list
-── Error ('test-logger.R:159:5'): normalize_limit() can normalize limits ───────
-Error in `normalize_limit(1)`: could not find function "normalize_limit"
-Backtrace:
-    ▆
- 1. └─testthat::expect_equal(normalize_limit(1), 1) at test-logger.R:159:5
- 2.   └─testthat::quasi_label(enquo(object), label, arg = "object")
- 3.     └─rlang::eval_bare(expr, quo_get_env(quo))
-── Error ('test-logger.R:176:5'): with_limits() can guard logger, lower and upper types & values ──
-Error in `make_level_number(lower)`: could not find function "make_level_number"
-Backtrace:
-    ▆
- 1. ├─logger() %>% with_limits(0, 120) at test-logger.R:176:5
- 2. ├─logthis::with_limits(., 0, 120)
- 3. └─logthis:::with_limits.logger(., 0, 120)
+── Failure ('test-logger.R:168:5'): normalize_limit() can normalize limits ─────
+normalize_limit(WARNING) not equal to 80.
+Attributes: < Modes: list, NULL >
+Attributes: < Lengths: 1, 0 >
+Attributes: < names for target but not for current >
+Attributes: < current is not list-like >
+target is level_number, current is numeric
+── Failure ('test-logger.R:190:5'): with_limits() can guard logger, lower and upper types & values ──
+`{ ... }` did not produce any messages.
 ── Failure ('test-logger.R:237:5'): logger chaining works correctly ────────────
 attr(result, "receiver_results") not equal to list(NULL).
 target is NULL, current is list
 ── Failure ('test-logger.R:256:5'): scope-based logger enhancement works ───────
 attr(result, "receiver_results") not equal to list(test_event, NULL).
 target is NULL, current is list
-── Error ('test-logger.R:262:5'): two-level filtering works correctly ──────────
-Error in `make_level_number(lower)`: could not find function "make_level_number"
-Backtrace:
-    ▆
- 1. ├─... %>% with_limits(lower = NOTE, upper = HIGHEST) at test-logger.R:262:5
- 2. ├─logthis::with_limits(., lower = NOTE, upper = HIGHEST)
- 3. └─logthis:::with_limits.logger(., lower = NOTE, upper = HIGHEST)
-── Error ('test-logger.R:288:9'): with_limits() returns type `logger` ──────────
-Error in `make_level_number(lower)`: could not find function "make_level_number"
-Backtrace:
-    ▆
- 1. ├─testthat::expect_s3_class(...) at test-logger.R:287:5
- 2. │ └─testthat::quasi_label(enquo(object), arg = "object")
- 3. │   └─rlang::eval_bare(expr, quo_get_env(quo))
- 4. ├─logger() %>% with_limits() at test-logger.R:288:9
- 5. ├─logthis::with_limits(.)
- 6. └─logthis:::with_limits.logger(.)
+── Failure ('test-logger.R:277:5'): two-level filtering works correctly ────────
+attr(result2, "receiver_results") has length 0, not length 1.
+── Failure ('test-logger.R:283:5'): two-level filtering works correctly ────────
+attr(result3, "receiver_results") has length 0, not length 1.
 ── Failure ('test-receivers.R:23:3'): to_console()() returns NULL ──────────────
 to_console()(test_event) is not NULL
 
 `actual` is an S3 object of class <TEST/log_event>, a list
 `expected` is NULL
 
-[ FAIL 15 | WARN 2 | SKIP 0 | PASS 48 ]
+[ FAIL 16 | WARN 2 | SKIP 0 | PASS 63 ]
 Error: Test failures
 Execution halted
