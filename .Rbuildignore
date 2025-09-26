@@ -1,5 +1,6 @@
 ^renv$
 ^renv\.lock$
+^\.Rprofile$
 ^logthis\.Rproj$
 ^\.Rproj\.user$
 ^README\.Rmd$

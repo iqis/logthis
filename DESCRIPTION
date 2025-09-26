@@ -2,11 +2,12 @@ Package: logthis
 Title: Structured Logging Framework for R
 Version: 0.1.0.9000
 Authors@R: 
-    person(given = "iqis",
+    person(given = "Siqi",
+           family = "Zhang",
            role = c("aut", "cre"),
-           email = "iqis@example.com")
-Author: iqis [aut, cre]
-Maintainer: iqis <iqis@example.com>
+           email = "iqis.gnahz@gmail.com")
+Author: Siqi Zhang [aut, cre]
+Maintainer: Siqi Zhang <iqis.gnahz@gmail.com>
 Description: A flexible, structured logging framework for R applications.
     Provides hierarchical event levels, multiple output receivers (console, files, 
     Shiny alerts), configurable filtering, and rich metadata support. Designed 
