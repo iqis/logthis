@@ -1,6 +1,6 @@
 {
   "name": "R Development Environment for logthis",
-  "image": "ubuntu:24.04",
+  "image": "rocker/tidyverse:latest",
   "features": {
     "ghcr.io/devcontainers/features/common-utils:2": {
       "installZsh": true,
@@ -13,7 +13,7 @@
     "ghcr.io/devcontainers/features/github-cli:1": {}
   },
   "onCreateCommand": ".devcontainer/setup.sh",
-  "postCreateCommand": "R --version && echo 'R Development Environment Ready!'",
+  "postCreateCommand": "R --version && echo '🔬 logthis Development Environment Ready!'",
   "customizations": {
     "vscode": {
       "extensions": [
@@ -25,11 +25,13 @@
         "GitHub.vscode-github-actions"
       ],
       "settings": {
-        "r.rterm.linux": "/usr/bin/R",
-        "r.rpath.linux": "/usr/bin/R",
+        "r.rterm.linux": "/usr/local/bin/R",
+        "r.rpath.linux": "/usr/local/bin/R",
         "r.bracketedPaste": true,
         "r.sessionWatcher": true,
         "r.rtermSendDelay": 0,
+        "r.lsp.enabled": true,
+        "r.alwaysUseActiveTerminal": true,
         "terminal.integrated.defaultProfile.linux": "bash"
       }
     }

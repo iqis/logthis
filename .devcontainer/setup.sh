@@ -3,53 +3,29 @@ set -e
 
 echo "🚀 Setting up R Development Environment for logthis package..."
 
+# The rocker/tidyverse image already has R and tidyverse installed
+# We just need to install additional development packages
+
 # Update package lists
 echo "📦 Updating package lists..."
 apt-get update
 
-# Install basic dependencies
-echo "🔧 Installing basic dependencies..."
-apt-get install -y software-properties-common dirmngr wget curl
-
-# Add R repository GPG key
-echo "🔑 Adding R repository GPG key..."
-wget -qO- https://cloud.r-project.org/bin/linux/ubuntu/marutter_pubkey.asc | tee -a /etc/apt/trusted.gpg.d/cran_ubuntu_key.asc
-
-# Add R repository
-echo "📋 Adding R repository..."
-add-apt-repository "deb https://cloud.r-project.org/bin/linux/ubuntu $(lsb_release -cs)-cran40/" -y
-
-# Update package lists again
-apt-get update
-
-# Install R and development dependencies
-echo "📊 Installing R and development packages..."
+# Install additional system dependencies for R package development
+echo "🔧 Installing additional system dependencies..."
 apt-get install -y \
-    r-base \
-    r-base-dev \
-    build-essential \
-    libcurl4-openssl-dev \
-    libssl-dev \
-    libxml2-dev \
-    libfontconfig1-dev \
-    libharfbuzz-dev \
-    libfribidi-dev \
-    libfreetype6-dev \
-    libpng-dev \
-    libtiff5-dev \
-    libjpeg-dev \
     pandoc \
     pandoc-citeproc \
     texlive-latex-base \
     texlive-fonts-recommended \
-    texlive-extra-utils
+    texlive-extra-utils \
+    git
 
-# Install commonly used R packages for package development
+# Install R package development dependencies
 echo "📚 Installing R package development dependencies..."
 R --no-restore --no-save -e "
   options(repos = c(CRAN = 'https://cloud.r-project.org/'))
   
-  # Essential package development packages
+  # Essential package development packages (some may already be installed in tidyverse image)
   install.packages(c(
     'devtools',
     'roxygen2',
@@ -61,36 +37,23 @@ R --no-restore --no-save -e "
     'goodpractice',
     'lintr',
     'styler'
-  ))
+  ), lib = '/usr/local/lib/R/site-library')
   
-  # logthis package dependencies
+  # logthis package dependencies not included in tidyverse
   install.packages(c(
-    'magrittr',
-    'purrr',
     'crayon',
-    'tibble',
-    'glue',
     'shiny',
     'shinyalert'
-  ))
+  ), lib = '/usr/local/lib/R/site-library')
   
-  # Additional useful packages
-  install.packages(c(
-    'rmarkdown',
-    'knitr',
-    'htmltools',
-    'DT',
-    'ggplot2',
-    'dplyr'
-  ))
-  
-  cat('📦 R packages installed successfully!\n')
+  cat('📦 Additional R packages installed successfully!\n')
+  cat('� tidyverse packages already available from base image\n')
 "
 
 # Set up R profile for better development experience
 echo "🎯 Setting up R development environment..."
 cat > /home/vscode/.Rprofile << 'EOF'
-# logthis package development profile
+# logthis package development profile for rocker/tidyverse environment
 options(
   repos = c(CRAN = "https://cloud.r-project.org/"),
   browser = function(url) system(paste("code", url)),
@@ -105,12 +68,16 @@ options(
   warnPartialMatchAttr = TRUE
 )
 
-# Automatically load devtools for package development
+# Automatically load devtools and tidyverse for package development
 if (interactive()) {
   suppressMessages({
     if (requireNamespace("devtools", quietly = TRUE)) {
       library(devtools)
       cat("✅ devtools loaded for package development\n")
+    }
+    if (requireNamespace("tidyverse", quietly = TRUE)) {
+      library(tidyverse)
+      cat("✅ tidyverse loaded (ggplot2, dplyr, tidyr, readr, purrr, tibble, stringr, forcats)\n")
     }
   })
 }
@@ -119,10 +86,15 @@ if (interactive()) {
 cat("🔬 logthis Development Environment Ready!\n")
 cat("📍 Working directory:", getwd(), "\n")
 cat("📊 R version:", R.version.string, "\n")
+cat("🐳 Running in rocker/tidyverse container\n")
 EOF
 
-# Fix permissions
-chown -R vscode:vscode /home/vscode/.Rprofile
+# Fix permissions (rocker images use rstudio user by default, but devcontainer uses vscode)
+if id "vscode" &>/dev/null; then
+  chown -R vscode:vscode /home/vscode/.Rprofile 2>/dev/null || true
+elif id "rstudio" &>/dev/null; then
+  chown -R rstudio:rstudio /home/rstudio/.Rprofile 2>/dev/null || true
+fi
 
 # Clean up
 echo "🧹 Cleaning up..."
