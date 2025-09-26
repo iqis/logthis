@@ -29,24 +29,31 @@ test_that("logger()'s config attribute exists and has correct elements", {
 TEST <- log_event_level("TEST", 50)
 test_event <- TEST("Testing things.")
 
-test_that("logger()() can map receivers to event", {
-    expect_equal({
-        log_this <- logger() %>%
-            with_receivers(to_zero(),
-                           to_one())
-        log_this(test_event)
-    },
-    list(0, 1))
-
-
-    expect_equal({
+test_that("logger()() can map receivers to event and return event for chaining", {
+    # Test that logger returns the original event
+    result <- {
         log_this <- logger() %>%
             with_receivers(to_identity(),
-                           to_one())
+                           to_void())
         log_this(test_event)
-    },
-    list(test_event,
-         1))
+    }
+    
+    expect_equal(result, test_event)
+    
+    # Test that receiver results are available as attribute
+    # to_identity returns the event, to_void returns NULL invisibly
+    expect_equal(attr(result, "receiver_results"), list(test_event, NULL))
+
+
+    result2 <- {
+        log_this <- logger() %>%
+            with_receivers(to_identity(),
+                           to_identity())
+        log_this(test_event)
+    }
+    
+    expect_equal(result2, test_event)
+    expect_equal(attr(result2, "receiver_results"), list(test_event, test_event))
 })
 
 
@@ -192,6 +199,42 @@ test_that("with_limits() can guard logger, lower and upper types & values",{
             with_limits(1,
                         LOWEST)
     })
+})
+
+test_that("logger chaining works correctly", {
+    # Create multiple loggers
+    log_console <- logger() %>% with_receivers(to_identity())
+    log_file <- logger() %>% with_receivers(to_void())
+    
+    # Chain them together
+    result <- test_event %>%
+        log_console() %>%
+        log_file()
+    
+    # Should return the original event
+    expect_equal(result, test_event)
+    
+    # Should have receiver results from the last logger
+    expect_equal(attr(result, "receiver_results"), list(NULL))
+})
+
+test_that("scope-based logger enhancement works", {
+    # Base logger
+    base_logger <- logger() %>% with_receivers(to_identity())
+    
+    # Enhanced logger with additional receivers
+    enhanced_logger <- base_logger %>% with_receivers(to_void())
+    
+    # Base logger should have 1 receiver
+    expect_length(attr(base_logger, "config")$receivers, 1)
+    
+    # Enhanced logger should have 2 receivers
+    expect_length(attr(enhanced_logger, "config")$receivers, 2)
+    
+    # Test the enhanced logger
+    result <- enhanced_logger(test_event)
+    expect_equal(result, test_event)
+    expect_equal(attr(result, "receiver_results"), list(test_event, NULL))
 })
 
 test_that("with_limits() returns type `logger`", {

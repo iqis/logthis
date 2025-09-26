@@ -1,24 +1,32 @@
 Package: logthis
-Title: What the Package Does (One Line, Title Case)
-Version: 0.0.0.9000
+Title: Structured Logging Framework for R
+Version: 0.1.0.9000
 Authors@R: 
-    person(given = "First",
-           family = "Last",
+    person(given = "iqis",
            role = c("aut", "cre"),
-           email = "first.last@example.com",
-           comment = c(ORCID = "YOUR-ORCID-ID"))
-Description: What the package does (one paragraph).
-License: `use_mit_license()`, `use_gpl3_license()` or friends to
-    pick a license
+           email = "iqis@example.com")
+Description: A flexible, structured logging framework for R applications.
+    Provides hierarchical event levels, multiple output receivers (console, files, 
+    Shiny alerts), configurable filtering, and rich metadata support. Designed 
+    for R packages, Shiny applications, and data analysis pipelines requiring 
+    enterprise-level logging capabilities.
+License: MIT + file LICENSE
+URL: https://github.com/iqis/logthis, https://iqis.github.io/logthis/
+BugReports: https://github.com/iqis/logthis/issues
 Encoding: UTF-8
 LazyData: true
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.1.1
 Suggests: 
-    testthat
+    testthat (>= 3.0.0),
+    pkgdown,
+    knitr,
+    rmarkdown,
+    shinyalert
 Imports: 
     magrittr,
     purrr,
     crayon,
     tibble,
     glue
+VignetteBuilder: knitr

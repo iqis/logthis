@@ -1,0 +1,132 @@
+---
+title: "Getting Started with logthis"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Getting Started with logthis}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(logthis)
+```
+
+# Introduction
+
+The `logthis` package provides a structured logging framework for R applications. This vignette will walk you through the basics of setting up and using loggers in your R projects.
+
+## Creating Your First Logger
+
+The simplest way to get started is to create a logger with console output:
+
+```{r basic-logger}
+# Create a basic logger
+log_this <- logger() %>%
+    with_receivers(to_console()) %>%
+    with_limits(lower = NOTE, upper = HIGHEST)
+
+# Test it out
+log_this(NOTE("Hello, logging world!"))
+log_this(WARNING("This is a warning"))
+log_this(ERROR("This is an error"))
+```
+
+## Understanding Event Levels
+
+`logthis` uses a hierarchical system with numeric levels from 0 to 120:
+
+- **LOWEST (0)** - Lowest priority debugging
+- **CHATTER (20)** - Verbose debugging output
+- **NOTE (40)** - General notes and information
+- **MESSAGE (60)** - Important messages
+- **WARNING (80)** - Warning conditions
+- **ERROR (100)** - Error conditions
+- **HIGHEST (120)** - Critical events
+
+```{r event-levels}
+# Create events at different levels
+log_this(CHATTER("This is very detailed debug info"))
+log_this(NOTE("Application started successfully"))
+log_this(MESSAGE("Processing 1000 records"))
+log_this(WARNING("Found 5 missing values"))
+log_this(ERROR("Database connection failed"))
+```
+
+## Filtering with Limits
+
+You can control which events are processed by setting lower and upper limits:
+
+```{r filtering}
+# Only show warnings and errors
+warnings_only <- logger() %>%
+    with_receivers(to_console()) %>%
+    with_limits(lower = WARNING, upper = HIGHEST)
+
+warnings_only(NOTE("This won't be shown"))
+warnings_only(WARNING("This will be shown"))
+warnings_only(ERROR("This will also be shown"))
+```
+
+## Multiple Receivers
+
+A powerful feature of `logthis` is the ability to send log events to multiple destinations:
+
+```{r multiple-receivers}
+# Send to console and capture for testing
+multi_logger <- logger() %>%
+    with_receivers(
+        to_console(),
+        to_identity()  # Returns the event for inspection
+    )
+
+result <- multi_logger(WARNING("Sent to multiple receivers"))
+# The result contains the log event details
+```
+
+## Custom Event Levels
+
+You can define your own event levels for specific use cases:
+
+```{r custom-levels}
+# Define custom levels
+TRACE <- log_event_level("TRACE", 10)
+DEBUG <- log_event_level("DEBUG", 30)
+INFO <- log_event_level("INFO", 50)
+
+# Use custom levels
+log_this(TRACE("Entering function xyz()"))
+log_this(DEBUG("Variable x = 42"))  
+log_this(INFO("Processing completed"))
+```
+
+## Structured Logging
+
+Log events can contain additional metadata:
+
+```{r structured}
+# Create events with custom fields
+user_event <- WARNING("User login failed", 
+                     user_id = "john_doe",
+                     ip_address = "192.168.1.100",
+                     attempt_count = 3)
+
+log_this(user_event)
+```
+
+## Next Steps
+
+This covers the basics of using `logthis`. For more advanced usage including:
+
+- Integration with Shiny applications
+- Custom receivers
+- File logging
+- Production configurations
+
+See the "Advanced Usage" vignette.

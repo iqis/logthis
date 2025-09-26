@@ -1,0 +1,338 @@
+---
+title: "Advanced Usage"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Advanced Usage}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(logthis)
+```
+
+# Advanced logthis Usage
+
+This vignette covers advanced features and patterns for using `logthis` in production applications.
+
+## Logger Chaining and Composition
+
+One of the most powerful features of `logthis` is the ability to chain loggers and compose them flexibly within different scopes.
+
+### Basic Logger Chaining
+
+Loggers return log events invisibly, allowing you to chain multiple loggers together:
+
+```{r chaining-basic}
+# Create specialized loggers
+log_console <- logger() %>% with_receivers(to_console())
+log_capture <- logger() %>% with_receivers(to_identity())
+
+# Chain them - event goes through both
+result <- WARNING("System warning") %>%
+    log_console() %>%
+    log_capture()
+
+# The final result is the original log event
+print(result$message)
+print(result$level_class)
+```
+
+### Scope-Based Logger Enhancement  
+
+You can enhance loggers within specific scopes without affecting the parent scope:
+
+```{r scope-enhancement}
+# Base logger
+base_logger <- logger() %>% with_receivers(to_console())
+
+process_data <- function() {
+    # Add additional logging in this scope
+    enhanced_logger <- base_logger %>% 
+        with_receivers(to_identity())  # Add file logging
+    
+    enhanced_logger(NOTE("Processing data with enhanced logging"))
+    
+    # Nested enhancement
+    critical_section <- function() {
+        critical_logger <- enhanced_logger %>%
+            with_receivers(to_void())  # Add silent monitoring
+        
+        critical_logger(WARNING("In critical section"))
+    }
+    
+    critical_section()
+}
+
+process_data()
+
+# Base logger unchanged
+base_logger(NOTE("Back to base logging"))
+```
+
+### Logger Pipelines
+
+Create reusable logging pipelines:
+
+```{r logger-pipelines}
+# Define a logging pipeline
+create_audit_pipeline <- function() {
+    console_logger <- logger() %>% with_receivers(to_console())
+    audit_logger <- logger() %>% with_receivers(to_identity())
+    alert_logger <- logger() %>% with_receivers(to_void())
+    
+    function(event) {
+        event %>%
+            console_logger() %>%
+            audit_logger() %>%
+            alert_logger()
+    }
+}
+
+audit_log <- create_audit_pipeline()
+
+# Use the pipeline
+audit_log(ERROR("Security violation detected"))
+```
+
+## Shiny Application Integration
+
+`logthis` provides seamless integration with Shiny applications through the `to_shinyalert()` receiver:
+
+```{r shiny-example, eval=FALSE}
+library(shiny)
+library(logthis)
+library(shinyalert)
+
+# Setup application logger
+app_logger <- logger() %>%
+    with_receivers(
+        to_console(min_level = CHATTER),    # All events to console
+        to_shinyalert(lower = ERROR)        # Only errors as alerts
+    )
+
+ui <- fluidPage(
+    useShinyalert(),
+    actionButton("process", "Process Data"),
+    actionButton("error", "Trigger Error")
+)
+
+server <- function(input, output, session) {
+    observeEvent(input$process, {
+        app_logger(NOTE("User clicked process button"))
+        
+        tryCatch({
+            # Simulate processing
+            app_logger(MESSAGE("Processing started"))
+            Sys.sleep(1)
+            app_logger(MESSAGE("Processing completed successfully"))
+        }, error = function(e) {
+            app_logger(ERROR(paste("Processing failed:", e$message)))
+        })
+    })
+    
+    observeEvent(input$error, {
+        app_logger(ERROR("User triggered an error for testing"))
+    })
+}
+
+shinyApp(ui, server)
+```
+
+## Custom Receivers
+
+You can create custom receivers to send logs to files, databases, or external services:
+
+```{r custom-receivers}
+# File logging receiver
+to_file <- function(filepath, min_level = LOWEST, max_level = HIGHEST) {
+    structure(
+        function(event) {
+            if (attr(min_level, "level_number") <= event$level_number &&
+                event$level_number <= attr(max_level, "level_number")) {
+                
+                log_line <- paste0(
+                    format(event$time, "%Y-%m-%d %H:%M:%S"), " ",
+                    "[", event$level_class, "] ",
+                    event$message
+                )
+                
+                cat(log_line, "\n", file = filepath, append = TRUE)
+            }
+            event
+        },
+        class = c("log_receiver", "function")
+    )
+}
+
+# Email notification receiver (pseudo-code)
+to_email <- function(recipient, min_level = ERROR) {
+    structure(
+        function(event) {
+            if (event$level_number >= attr(min_level, "level_number")) {
+                # Send email notification
+                # email_service$send(
+                #     to = recipient,
+                #     subject = paste("Log Alert:", event$level_class),
+                #     body = event$message
+                # )
+            }
+            event
+        },
+        class = c("log_receiver", "function")
+    )
+}
+```
+
+## Production Configuration
+
+For production applications, you typically want different logging configurations:
+
+```{r production-config}
+# Development logger - verbose output
+dev_logger <- logger() %>%
+    with_receivers(to_console(min_level = CHATTER)) %>%
+    with_limits(lower = CHATTER, upper = HIGHEST)
+
+# Production logger - structured logging to file with alerts
+prod_logger <- logger() %>%
+    with_receivers(
+        to_console(min_level = WARNING),         # Only warnings+ to console
+        # to_file("/var/log/app.log"),          # All events to file
+        # to_email("admin@company.com")          # Critical errors via email
+    ) %>%
+    with_limits(lower = NOTE, upper = HIGHEST)
+
+# Environment-aware logger selection
+get_logger <- function() {
+    if (Sys.getenv("R_ENV") == "production") {
+        return(prod_logger)
+    } else {
+        return(dev_logger)
+    }
+}
+
+app_logger <- get_logger()
+```
+
+## Package Development
+
+When developing R packages, you can include logging capabilities:
+
+```{r package-logging}
+# In your package's R/zzz.R file:
+.onLoad <- function(libname, pkgname) {
+    # Create package-level logger
+    pkg_logger <- logger() %>%
+        with_receivers(to_console(min_level = WARNING)) %>%
+        with_limits(lower = NOTE, upper = HIGHEST)
+    
+    # Store in package environment
+    assign("pkg_logger", pkg_logger, envir = parent.env(environment()))
+}
+
+# In your package functions:
+my_function <- function(x) {
+    pkg_logger(NOTE("Function my_function() called"))
+    
+    if (missing(x)) {
+        pkg_logger(WARNING("Argument 'x' is missing, using default"))
+        x <- 1
+    }
+    
+    tryCatch({
+        result <- x * 2
+        pkg_logger(MESSAGE(paste("Computed result:", result)))
+        result
+    }, error = function(e) {
+        pkg_logger(ERROR(paste("Computation failed:", e$message)))
+        stop(e)
+    })
+}
+```
+
+## Performance Considerations
+
+For high-performance applications, consider using the dummy logger to disable logging:
+
+```{r performance}
+# Create conditional logger based on debug flag
+create_logger <- function(debug = FALSE) {
+    if (debug) {
+        logger() %>%
+            with_receivers(to_console()) %>%
+            with_limits(lower = CHATTER, upper = HIGHEST)
+    } else {
+        dummy_logger()  # No-op logger for production
+    }
+}
+
+# Usage
+DEBUG_MODE <- as.logical(Sys.getenv("DEBUG", "FALSE"))
+app_logger <- create_logger(DEBUG_MODE)
+
+# These calls have minimal overhead when DEBUG_MODE is FALSE
+app_logger(CHATTER("This is expensive debug info"))
+app_logger(NOTE("Processing item 1000"))
+```
+
+## Error Handling Patterns
+
+Common patterns for error handling with logging:
+
+```{r error-patterns}
+# Wrapper function with logging
+with_logging <- function(expr, logger = app_logger) {
+    tryCatch({
+        logger(NOTE("Operation started"))
+        result <- expr
+        logger(MESSAGE("Operation completed successfully"))
+        result
+    }, warning = function(w) {
+        logger(WARNING(paste("Warning:", w$message)))
+        result
+    }, error = function(e) {
+        logger(ERROR(paste("Error:", e$message)))
+        stop(e)
+    })
+}
+
+# Usage
+result <- with_logging({
+    # Your risky code here
+    if (runif(1) < 0.5) {
+        warning("Random warning")
+    }
+    if (runif(1) < 0.2) {
+        stop("Random error")
+    }
+    "Success!"
+})
+```
+
+## Testing Logged Applications
+
+Use the identity receiver to capture and test log events:
+
+```{r testing}
+# Test logger setup
+test_logger <- logger() %>%
+    with_receivers(to_identity())
+
+# Capture log events for testing
+result <- test_logger(WARNING("Test warning"))
+
+# Verify log event properties
+stopifnot(result$level_class == "WARNING")
+stopifnot(result$message == "Test warning")
+stopifnot(!is.null(result$time))
+```
+
+This covers the advanced usage patterns of `logthis`. The package is designed to be flexible enough to handle a wide variety of logging requirements while maintaining a consistent API.

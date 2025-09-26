@@ -1,0 +1,16 @@
+citHeader("To cite logthis in publications use:")
+
+citEntry(
+  entry    = "Manual",
+  title    = "logthis: Structured Logging Framework for R",
+  author   = "iqis",
+  year     = "2025",
+  note     = "R package version 0.1.0.9000",
+  url      = "https://github.com/iqis/logthis",
+  textVersion = paste(
+    "iqis (2025).",
+    "logthis: Structured Logging Framework for R.",
+    "R package version 0.1.0.9000.",
+    "https://github.com/iqis/logthis"
+  )
+)

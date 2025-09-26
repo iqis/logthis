@@ -4,8 +4,6 @@ library(purrr)
 test_that("all receivers generate the correct type", {
   list(to_identity,
        to_void,
-       to_zero,
-       to_one,
        to_console) %>%
     map(exec) %>%
     map(~ expect_s3_class(., "function")) %>%

@@ -1,20 +1,51 @@
 #' Create a logger
 #'
+#' Creates a logger function that processes log events through configured receivers.
+#' Loggers return the log event invisibly, enabling chaining multiple loggers together.
+#'
 #' @return logger; <logger>
 #' @export
 #'
 #' @examples
 #'
+#' # Basic logger
 #' log_this <- logger()
+#' 
+#' # Configure with receivers
+#' log_this <- logger() %>%
+#'     with_receivers(to_console()) %>%
+#'     with_limits(lower = NOTE, upper = HIGHEST)
+#' 
+#' # Chain multiple loggers together
+#' log_console <- logger() %>% with_receivers(to_console())
+#' log_file <- logger() %>% with_receivers(to_identity()) # placeholder for file logger
+#' 
+#' # Chain loggers: event goes through both
+#' WARNING("Database error") %>% 
+#'     log_console() %>% 
+#'     log_file()
+#'     
+#' # Scope-based logger masking
+#' process_data <- function() {
+#'     # Add file logging in this scope only  
+#'     log_this <- log_this %>% with_receivers(to_identity()) # add file receiver
+#'     
+#'     log_this(NOTE("Starting data processing"))
+#'     # ... processing logic
+#' }
 #'
 logger <- function(){
   structure(function(event, ...){
 
     config <- attr(sys.function(),
                    "config")
-    config$receivers %>%
+    receiver_results <- config$receivers %>%
       purrr::map(purrr::exec,
                  event = event)
+    
+    # Return the event to enable chaining, with receiver results as attribute
+    attr(event, "receiver_results") <- receiver_results
+    invisible(event)
   },
   class = c("logger",
             "function"),
@@ -27,7 +58,7 @@ logger <- function(){
 #' @rdname logger
 dummy_logger <- function(){
   structure(function(event, ...){
-    invisible(NULL)
+    invisible(event)
   },
   class = c("logger",
             "function"),
@@ -38,6 +69,10 @@ dummy_logger <- function(){
 
 #' Add receivers to a logger
 #'
+#' Adds one or more receivers to a logger. Receivers determine where log events 
+#' are sent (console, files, alerts, etc.). When append=TRUE (default), new 
+#' receivers are added to existing ones, enabling incremental logger composition.
+#'
 #' @param logger a logger; <logger>
 #' @param ... receivers; <log_receiver>
 #' @param append to append to existing receivers, or to overwrite; <logical>
@@ -47,10 +82,26 @@ dummy_logger <- function(){
 #'
 #' @examples
 #'
+#' # Basic receiver addition
 #' log_this <- logger() %>%
-#'     with_receivers(to_identity(),
-#'                    list(to_zero(),
-#'                         to_one()))
+#'     with_receivers(to_console(), to_identity())
+#'
+#' # Incremental composition (append=TRUE by default)
+#' log_this <- logger() %>%
+#'     with_receivers(to_console())
+#'     
+#' # Later, in a child scope, add more receivers
+#' process_data <- function() {
+#'     # Add file logging to existing console logging
+#'     log_this <- log_this %>% 
+#'         with_receivers(to_identity()) # represents file logger
+#'     
+#'     log_this(NOTE("Now logs to both console and file"))
+#' }
+#'
+#' # Replace all receivers (append=FALSE)
+#' log_this <- log_this %>%
+#'     with_receivers(to_console(), append = FALSE)
 #'
 with_receivers <- function(logger, ..., append = TRUE){
   if (!inherits(logger, "logger")) {

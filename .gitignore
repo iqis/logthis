@@ -1,1 +1,27 @@
+# R package development
 .Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+
+# Package builds
+*.tar.gz
+*.tgz
+
+# Documentation
+docs/
+inst/doc
+
+# pkgdown
+_site/
+
+# IDE
+.vscode/
+*.Rproj
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

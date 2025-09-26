@@ -18,24 +18,6 @@ to_void <- function(){
 }
 
 #' @export
-to_zero <- function(){
-  structure(function(event){
-    0
-  },
-  class = c("log_receiver",
-            "function"))
-}
-
-#' @export
-to_one <- function(){
-  structure(function(event){
-    1
-  },
-  class = c("log_receiver",
-            "function"))
-}
-
-#' @export
 to_console <- function(min_level = LOWEST,
                        max_level = HIGHEST){
   structure(

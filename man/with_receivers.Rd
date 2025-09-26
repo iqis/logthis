@@ -21,9 +21,8 @@ Add receivers to a logger
 }
 \examples{
 
-log_this <- logger() \%>\%
+log_this <- logger() %>%
     with_receivers(to_identity(),
-                   list(to_zero(),
-                        to_one()))
+                   to_console())
 
 }

@@ -1,0 +1,87 @@
+url: https://iqis.github.io/logthis/
+
+template:
+  bootstrap: 5
+  
+home:
+  title: "logthis • Structured Logging Framework for R"
+  description: >
+    A flexible, structured logging framework for R applications with 
+    hierarchical event levels, multiple output receivers, and rich metadata support.
+
+navbar:
+  structure:
+    left: [intro, reference, articles, tutorials, news]
+    right: [search, github]
+  components:
+    home:
+      icon: fas fa-home
+      href: index.html
+    reference:
+      text: Reference
+      href: reference/index.html
+    articles:
+      text: Articles
+      menu:
+      - text: Getting Started
+        href: articles/getting-started.html
+      - text: Advanced Usage
+        href: articles/advanced-usage.html
+    news:
+      text: Changelog
+      href: news/index.html
+    github:
+      icon: fab fa-github
+      href: https://github.com/iqis/logthis
+      aria-label: GitHub
+
+reference:
+- title: Core Functions
+  desc: Essential functions for creating and configuring loggers
+  contents:
+  - logger
+  - dummy_logger
+  - with_receivers
+  - with_limits
+
+- title: Event Levels
+  desc: Predefined and custom log event levels
+  contents:
+  - log_event_level
+  - LOWEST
+  - CHATTER
+  - NOTE
+  - MESSAGE
+  - WARNING
+  - ERROR
+  - HIGHEST
+
+- title: Receivers
+  desc: Output destinations for log events
+  contents:
+  - to_console
+  - to_shinyalert
+  - to_notif
+  - to_identity
+  - to_void
+
+- title: Utilities
+  desc: Helper functions and utilities
+  contents:
+  - pipe
+
+articles:
+- title: Getting Started
+  navbar: ~
+  contents:
+  - getting-started
+  
+- title: Advanced Usage
+  navbar: ~
+  contents:
+  - advanced-usage
+
+news:
+  releases:
+  - text: "Version 0.1.0"
+    href: https://github.com/iqis/logthis/releases/tag/v0.1.0
