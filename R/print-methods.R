@@ -67,7 +67,7 @@ identify_receiver_type <- function(receiver) {
   if (any(grepl("crayon::", func_body)) || any(grepl("cat\\(", func_body))) {
     return("Console receiver (to_console)")
   } else if (any(grepl("shinyalert::", func_body))) {
-    return "Shiny alert receiver (to_shinyalert)"
+    return("Shiny alert receiver (to_shinyalert)")
   } else if (any(grepl("shiny::showNotification", func_body))) {
     return("Notification receiver (to_notif)")
   } else if (any(grepl("file\\(", func_body)) || any(grepl("writeLines", func_body))) {

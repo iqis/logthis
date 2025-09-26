@@ -20,9 +20,6 @@ Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.1.1
 Suggests: 
     testthat (>= 3.0.0),
-    pkgdown,
-    knitr,
-    rmarkdown,
     shinyalert
 Imports: 
     magrittr,
@@ -30,4 +27,3 @@ Imports:
     crayon,
     tibble,
     glue
-VignetteBuilder: knitr

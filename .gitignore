@@ -4,9 +4,12 @@
 .RData
 .Ruserdata
 
-# Package builds
+# Package builds and checks
 *.tar.gz
 *.tgz
+*.Rcheck/
+..Rcheck/
+.Rcheck/
 
 # Documentation
 docs/
@@ -25,3 +28,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Test artifacts  
+test_functionality.R
