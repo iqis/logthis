@@ -13,7 +13,7 @@
 #' # Create a custom receiver using the constructor
 #' my_receiver <- receiver(function(event) {
 #'   cat("LOG:", event$message, "\n")
-#'   return(event)
+#'   invisible(NULL)
 #' })
 #' 
 #' # This will error - wrong argument name
@@ -86,7 +86,7 @@ to_void <- function(){
 #' # Custom receiver example using the receiver() constructor
 #' my_receiver <- receiver(function(event) {
 #'   cat("CUSTOM:", event$message, "\n")
-#'   return(event)
+#'   invisible(NULL)
 #' })
 #' 
 #' # Use custom receiver
@@ -127,7 +127,7 @@ to_console <- function(lower = LOWEST,
                                                 message,
                                                 "\n"))))
       }
-      event
+      invisible(NULL)
       })
 }
 
@@ -147,7 +147,7 @@ to_shinyalert <- function(lower = WARNING, upper = HIGHEST, ...){
                                type = "error",
                                ...)
       }
-      event
+      invisible(NULL)
     })
 }
 
@@ -166,7 +166,7 @@ to_notif <- function(lower = NOTE, upper = WARNING, ...){
         shiny::showNotification(event$message,
                                 ...)
       }
-      event
+      invisible(NULL)
     })
 }
 
@@ -196,7 +196,7 @@ to_notif <- function(lower = NOTE, upper = WARNING, ...){
 #' simple_file_logger <- receiver(function(event) {
 #'   cat(paste(event$time, event$level_class, event$message), 
 #'       file = "simple.log", append = TRUE, sep = "\n")
-#'   return(event)
+#'   invisible(NULL)
 #' })
 #'
 to_text_file <- function(lower = LOWEST,
@@ -228,7 +228,7 @@ to_text_file <- function(lower = LOWEST,
                  file = path,
                  append = TRUE))
       }
-      event
+      invisible(NULL)
     })
 }
 

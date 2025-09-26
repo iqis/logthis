@@ -20,7 +20,7 @@ log_event_level <- function(level_class, level_number){
       structure(list(message = message,
                      time = Sys.time(),
                      level_class = level_class,
-                     level_number = level_number,
+                     level_number = as.numeric(level_number),
                      tags = c(),
                      ...),
                 class = c(level_class,
