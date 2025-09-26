@@ -5,6 +5,8 @@ Authors@R:
     person(given = "iqis",
            role = c("aut", "cre"),
            email = "iqis@example.com")
+Author: iqis [aut, cre]
+Maintainer: iqis <iqis@example.com>
 Description: A flexible, structured logging framework for R applications.
     Provides hierarchical event levels, multiple output receivers (console, files, 
     Shiny alerts), configurable filtering, and rich metadata support. Designed 
