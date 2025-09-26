@@ -1,6 +1,10 @@
 ^renv$
 ^renv\.lock$
 ^\.Rprofile$
+^\.devcontainer$
+^\.git$
+^\.github$
+^\.gitignore$
 ^logthis\.Rproj$
 ^\.Rproj\.user$
 ^README\.Rmd$

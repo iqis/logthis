@@ -41,6 +41,13 @@ receiver <- function(func) {
 }
 
 # Dummy receivers, mainly for testing
+#' Identity receiver for testing
+#'
+#' A receiver that returns the event unchanged. Primarily used for testing
+#' purposes to verify that events are being processed correctly.
+#'
+#' @return A log receiver that returns the log event as-is
+#' @family receivers
 #' @export
 to_identity <- function(){
   receiver(function(event){
@@ -48,6 +55,13 @@ to_identity <- function(){
   })
 }
 
+#' Void receiver that discards events
+#'
+#' A receiver that discards all log events by returning NULL invisibly.
+#' Used for testing or when you want to disable logging temporarily.
+#'
+#' @return A log receiver that discards all events
+#' @family receivers
 #' @export
 to_void <- function(){
   receiver(function(event){

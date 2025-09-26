@@ -172,8 +172,14 @@ with_limits <- function(x, lower, upper, ...){
 #' will be processed by the logger.
 #'
 #' @param logger logger; <logger>
+#' Set level limits for logger
+#'
+#' Configures the logger to only process events within the specified level range.
+#'
+#' @param x logger object to modify
 #' @param lower lower limit (inclusive); <numeric> | <log_event_level>
 #' @param upper upper limit (inclusive); <numeric> | <log_event_level>
+#' @param ... additional arguments (currently unused)
 #'
 #' @return logger; <logger>
 #' @export

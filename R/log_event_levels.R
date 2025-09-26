@@ -1,7 +1,11 @@
 #' Log Event Levels
 #'
+#' Creates a constructor function for log events at a specific level.
+#'
 #' @param level_class S3 class of the event; <character>
 #' @param level_number level number; <integer>
+#' @param message The log message when using the returned constructor function
+#' @param ... Additional parameters passed to the log event when using the returned constructor function
 #'
 #' @return log event constructor; <function>
 #' @export
