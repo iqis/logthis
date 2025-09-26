@@ -61,17 +61,51 @@ log_this(ERROR("Database connection failed"))
 
 ## Filtering with Limits
 
-You can control which events are processed by setting lower and upper limits:
+`logthis` provides a sophisticated two-level filtering system:
 
-```{r filtering}
-# Only show warnings and errors
-warnings_only <- logger() %>%
+### Logger-Level Filtering (First Filter)
+
+Set limits on the entire logger - events outside these bounds never reach any receivers:
+
+```{r logger-filtering}
+# Only WARNING and ERROR events are processed at all
+log_this <- logger() %>%
     with_receivers(to_console()) %>%
     with_limits(lower = WARNING, upper = HIGHEST)
 
-warnings_only(NOTE("This won't be shown"))
-warnings_only(WARNING("This will be shown"))
-warnings_only(ERROR("This will also be shown"))
+log_this(NOTE("This won't be processed"))      # Blocked by logger
+log_this(WARNING("This will be processed"))    # Passes logger filter
+```
+
+### Receiver-Level Filtering (Second Filter)  
+
+Each receiver can further filter events that passed the logger filter:
+
+```{r receiver-filtering}
+# Logger allows NOTE+, but console receiver only shows WARNING+
+log_this <- logger() %>%
+    with_receivers(to_console(lower = WARNING)) %>%
+    with_limits(lower = NOTE, upper = HIGHEST)
+
+log_this(CHATTER("Blocked by logger"))      # Below logger limit  
+log_this(NOTE("Blocked by receiver"))       # Passes logger, blocked by receiver
+log_this(WARNING("Reaches console"))        # Passes both filters
+```
+
+### Combined Filtering Strategy
+
+```{r combined-filtering}
+# Sophisticated filtering with multiple receivers
+log_this <- logger() %>%
+    with_receivers(
+        to_console(lower = WARNING),     # Console: warnings and errors only
+        to_identity()                        # Audit: all events that pass logger  
+    ) %>%
+    with_limits(lower = NOTE, upper = HIGHEST)  # Logger: notes and above
+
+# Events flow: CHATTER blocked by logger
+#              NOTE reaches audit receiver only  
+#              WARNING+ reaches both receivers
 ```
 
 ## Multiple Receivers
@@ -79,15 +113,17 @@ warnings_only(ERROR("This will also be shown"))
 A powerful feature of `logthis` is the ability to send log events to multiple destinations:
 
 ```{r multiple-receivers}
+```{r multiple-receivers}
 # Send to console and capture for testing
-multi_logger <- logger() %>%
+log_this <- logger() %>%
     with_receivers(
         to_console(),
         to_identity()  # Returns the event for inspection
     )
 
-result <- multi_logger(WARNING("Sent to multiple receivers"))
-# The result contains the log event details
+result <- log_this(WARNING("Sent to multiple receivers"))
+print(result)  # The returned event object
+```
 ```
 
 ## Custom Event Levels

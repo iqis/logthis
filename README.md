@@ -55,11 +55,13 @@ log_this(WARNING("This is a warning message"))
 log_this(ERROR("Something went wrong!"))
 ```
 
+**Note:** The package also exports a void logger called `log_this()` that discards all events - perfect for testing or when you want to disable logging without changing your code.
+
 ## Event Levels
 
 `logthis` uses a hierarchical system with predefined levels:
 
-| Level    | Number | Purpose                    | Color  |
+| Level    | Number | Purpose                    | Color* |
 |----------|--------|----------------------------|--------|
 | LOWEST   | 0      | Lowest priority debugging  | White  |
 | CHATTER  | 20     | Verbose debugging output   | Silver |
@@ -68,6 +70,8 @@ log_this(ERROR("Something went wrong!"))
 | WARNING  | 80     | Warning conditions         | Red    |
 | ERROR    | 100    | Error conditions           | Bold Red |
 | HIGHEST  | 120    | Critical events            | Bold Red |
+
+*Colors are applied by the default `to_console()` receiver. Other receivers may use different formatting.
 
 ## Creating Custom Levels
 
@@ -86,10 +90,10 @@ Receivers determine where log events are sent. Multiple receivers can be attache
 ### Built-in Receivers
 
 ```r
-# Console output with color coding
-to_console(min_level = LOWEST, max_level = HIGHEST)
+# Console output with color coding (filtering is optional)
+to_console(lower = LOWEST, upper = HIGHEST)
 
-# Shiny alerts (for Shiny applications)
+# Shiny alerts (for Shiny applications)  
 to_shinyalert(lower = WARNING, upper = HIGHEST)
 
 # Notifications
@@ -100,26 +104,62 @@ to_identity()  # Returns the event as-is
 to_void()      # Discards the event
 ```
 
+**Note:** Setting `lower`/`upper` boundaries is strictly optional for receivers. When omitted, receivers process all events that pass through the logger-level filter.
+
 ### Multiple Receivers Example
 
 ```r
 # Send logs to both console and Shiny alerts
 log_this <- logger() %>%
     with_receivers(
-        to_console(min_level = CHATTER),
+        to_console(lower = CHATTER),
         to_shinyalert(lower = ERROR)
     )
 ```
 
 ## Advanced Configuration
 
-### Setting Level Limits
+### Two-Level Filtering System
+
+`logthis` provides a sophisticated two-level filtering system:
+
+1. **Logger-level filtering** (via `with_limits()`) - Filters events before they reach any receivers
+2. **Receiver-level filtering** (via `lower`/`upper` parameters) - Each receiver can further filter events
 
 ```r
-# Only process WARNING and ERROR events
+# Logger-level: Only WARNING and above reach receivers
+# Receiver-level: Console shows NOTE and above, file shows ERROR only
+log_this <- logger() %>%
+    with_receivers(
+        to_console(lower = NOTE),        # Receiver filter: NOTE to HIGHEST  
+        to_text_file(lower = ERROR)      # Receiver filter: ERROR to HIGHEST
+    ) %>%
+    with_limits(lower = WARNING, upper = HIGHEST)  # Logger filter: WARNING to HIGHEST
+
+# Result: Console gets WARNING+, File gets ERROR+ (logger filter blocks NOTE/MESSAGE)
+log_this(NOTE("This won't reach any receiver"))        # Blocked by logger
+log_this(WARNING("This goes to console only"))         # Passes logger, blocked by file receiver
+log_this(ERROR("This goes to both console and file"))  # Passes both filters
+```
+
+### Setting Logger-Level Limits
+
+```r
+# Logger-level filtering - events outside these limits are dropped entirely
 log_this <- logger() %>%
     with_receivers(to_console()) %>%
     with_limits(lower = WARNING, upper = HIGHEST)
+```
+
+### Setting Receiver-Level Limits
+
+```r
+# Each receiver can have its own filtering independent of logger limits
+console_receiver <- to_console(lower = CHATTER, upper = WARNING)
+file_receiver <- to_text_file(lower = ERROR, upper = HIGHEST)
+
+log_this <- logger() %>%
+    with_receivers(console_receiver, file_receiver)
 ```
 
 ### Appending vs Replacing Receivers
@@ -141,26 +181,26 @@ log_this <- log_this %>%
 ### Chaining Multiple Loggers
 
 ```r
-# Create specialized loggers
-log_console <- logger() %>% with_receivers(to_console())
-log_file <- logger() %>% with_receivers(to_identity())  # placeholder for file logger
-log_alerts <- logger() %>% with_receivers(to_shinyalert(lower = ERROR))
+# Create specialized loggers for specific use cases  
+log_this_console <- logger() %>% with_receivers(to_console())
+log_this_file <- logger() %>% with_receivers(to_identity())  # placeholder for file logger
+log_this_alerts <- logger() %>% with_receivers(to_shinyalert(lower = ERROR))
 
 # Chain them together - event flows through all loggers
 WARNING("Database connection unstable") %>%
-    log_console() %>%
-    log_file() %>%
-    log_alerts()
+    log_this_console() %>%
+    log_this_file() %>%
+    log_this_alerts()
 
 # Or create a pipeline
-log_pipeline <- function(event) {
+log_this_pipeline <- function(event) {
     event %>%
-        log_console() %>%
-        log_file() %>%
-        log_alerts()
+        log_this_console() %>%
+        log_this_file() %>%
+        log_this_alerts()
 }
 
-log_pipeline(ERROR("Critical system failure"))
+log_this_pipeline(ERROR("Critical system failure"))
 ```
 
 ### Scope-Based Logger Enhancement
@@ -197,21 +237,21 @@ log_this(NOTE("Regular operation"))  # Only goes to console
 ```r
 # Environment-aware logger building
 create_logger <- function(env = "development") {
-    base_logger <- logger() %>% with_receivers(to_console())
+    log_this <- logger() %>% with_receivers(to_console())
     
     if (env == "production") {
-        base_logger <- base_logger %>%
+        log_this <- log_this %>%
             with_receivers(to_identity()) %>%  # file logging
             with_limits(lower = WARNING, upper = HIGHEST)
     } else if (env == "development") {
-        base_logger <- base_logger %>%
+        log_this <- log_this %>%
             with_limits(lower = CHATTER, upper = HIGHEST)
     }
     
-    return(base_logger)
+    return(log_this)
 }
 
-app_logger <- create_logger(Sys.getenv("R_ENV", "development"))
+log_this <- create_logger(Sys.getenv("R_ENV", "development"))
 ```
 
 ## Structured Log Events
@@ -244,9 +284,9 @@ library(shiny)
 library(logthis)
 
 # Setup logging for Shiny app
-app_logger <- logger() %>%
+log_this <- logger() %>%
     with_receivers(
-        to_console(min_level = NOTE),
+        to_console(lower = NOTE),
         to_shinyalert(lower = ERROR)
     )
 
@@ -254,9 +294,9 @@ server <- function(input, output, session) {
     observeEvent(input$submit, {
         tryCatch({
             # Your app logic here
-            app_logger(NOTE("User submitted form"))
+            log_this(NOTE("User submitted form"))
         }, error = function(e) {
-            app_logger(ERROR(paste("Form submission failed:", e$message)))
+            log_this(ERROR(paste("Form submission failed:", e$message)))
         })
     })
 }
@@ -266,16 +306,16 @@ server <- function(input, output, session) {
 
 ```r
 # Pipeline logging
-pipeline_logger <- logger() %>%
+log_this <- logger() %>%
     with_receivers(to_console()) %>%
     with_limits(lower = NOTE, upper = HIGHEST)
 
 # Track pipeline progress
-pipeline_logger(NOTE("Starting data processing"))
-pipeline_logger(MESSAGE(paste("Processed", nrow(data), "records")))
+log_this(NOTE("Starting data processing"))
+log_this(MESSAGE(paste("Processed", nrow(data), "records")))
 
 if (any(is.na(data))) {
-    pipeline_logger(WARNING("Found missing values in dataset"))
+    log_this(WARNING("Found missing values in dataset"))
 }
 ```
 
@@ -285,28 +325,226 @@ if (any(is.na(data))) {
 # Internal package logging
 .onLoad <- function(libname, pkgname) {
     # Create package logger
-    assign("pkg_logger", 
+    assign("log_this", 
            logger() %>% with_receivers(to_console()),
            envir = parent.env(environment()))
 }
 
 # Use in package functions
 my_function <- function() {
-    pkg_logger(NOTE("Function my_function() called"))
+    log_this(NOTE("Function my_function() called"))
     # ... function logic
 }
 ```
 
 ## Testing
 
+`logthis` provides excellent support for testing logging behavior in your applications.
+
+### Using the Void Logger for Tests
+
+The exported `log_this()` function is a void logger that discards all events - perfect for tests where you don't want actual logging output:
+
+```r
+library(testthat)
+library(logthis)
+
+test_that("function works with logging disabled", {
+    # Your function uses log_this() internally
+    my_function <- function(x) {
+        log_this(NOTE(paste("Processing", x)))
+        x * 2
+    }
+    
+    # No logging output during tests
+    result <- my_function(5)
+    expect_equal(result, 10)
+})
+```
+
+### Capturing Log Events for Testing
+
+Use `to_identity()` receiver to capture and inspect log events:
+
+```r
+test_that("correct log events are generated", {
+    # Create a logger that captures events
+    log_capture <- logger() %>% with_receivers(to_identity())
+    
+    # Function that logs events
+    process_data <- function(data) {
+        if (nrow(data) == 0) {
+            return(log_capture(WARNING("Empty dataset received")))
+        }
+        log_capture(NOTE(paste("Processing", nrow(data), "records")))
+    }
+    
+    # Test with empty data
+    empty_result <- process_data(data.frame())
+    expect_equal(empty_result$level_class, "WARNING")
+    expect_match(empty_result$message, "Empty dataset")
+    
+    # Test with actual data
+    data_result <- process_data(data.frame(x = 1:3))
+    expect_equal(data_result$level_class, "NOTE")
+    expect_match(data_result$message, "Processing 3 records")
+})
+```
+
+### Testing Logger Configuration
+
+Test that loggers are configured correctly:
+
+```r
+test_that("logger filters events correctly", {
+    # Create logger with specific limits
+    test_logger <- logger() %>%
+        with_receivers(to_identity()) %>%
+        with_limits(lower = WARNING, upper = HIGHEST)
+    
+    # Events below WARNING should be filtered out
+    note_event <- NOTE("This should be filtered")
+    result_note <- test_logger(note_event)
+    expect_null(result_note)  # Filtered events return NULL
+    
+    # Events at WARNING and above should pass through
+    warn_event <- WARNING("This should pass")
+    result_warn <- test_logger(warn_event)
+    expect_equal(result_warn$level_class, "WARNING")
+})
+```
+
+### Testing Receiver Behavior
+
+Test individual receivers:
+
+```r
+test_that("to_console receiver respects filtering", {
+    # Create console receiver with filtering
+    console_receiver <- to_console(lower = ERROR, upper = HIGHEST)
+    
+    # Test that it's a proper receiver function
+    expect_s3_class(console_receiver, "log_receiver")
+    expect_s3_class(console_receiver, "function")
+    
+    # Test event handling (console output testing would require more setup)
+    warn_event <- WARNING("Should be filtered")
+    error_event <- ERROR("Should be shown")
+    
+    # Both should return the original event (receivers are pass-through)
+    result_warn <- console_receiver(warn_event)
+    result_error <- console_receiver(error_event)
+    
+    expect_equal(result_warn, warn_event)
+    expect_equal(result_error, error_event)
+})
+```
+
+### Testing Logger Chaining
+
+Test that chaining works correctly:
+
+```r
+test_that("logger chaining preserves events", {
+    # Create loggers that capture events
+    log_first <- logger() %>% with_receivers(to_identity())
+    log_second <- logger() %>% with_receivers(to_identity())
+    
+    # Chain them together
+    original_event <- ERROR("Test message")
+    final_result <- original_event %>%
+        log_first() %>%
+        log_second()
+    
+    # Should return the original event unchanged
+    expect_equal(final_result, original_event)
+    expect_equal(final_result$message, "Test message")
+    expect_equal(final_result$level_class, "ERROR")
+})
+```
+
+### Mocking Loggers in Tests
+
+Replace loggers with test doubles:
+
+```r
+test_that("can mock logger behavior", {
+    # Save original logger
+    original_log_this <- log_this
+    
+    # Create mock logger that captures events
+    captured_events <- list()
+    mock_logger <- function(event) {
+        captured_events <<- append(captured_events, list(event))
+        return(event)
+    }
+    
+    # Replace global logger
+    assign("log_this", mock_logger, envir = globalenv())
+    
+    # Test your function
+    my_function <- function() {
+        log_this(NOTE("Function called"))
+        log_this(WARNING("Warning occurred"))
+        return("done")
+    }
+    
+    result <- my_function()
+    
+    # Verify logging behavior
+    expect_equal(length(captured_events), 2)
+    expect_equal(captured_events[[1]]$level_class, "NOTE")
+    expect_equal(captured_events[[2]]$level_class, "WARNING")
+    
+    # Restore original logger
+    assign("log_this", original_log_this, envir = globalenv())
+})
+```
+
+### Integration Testing with Multiple Receivers
+
+Test complex logging setups:
+
+```r
+test_that("multi-receiver logger works correctly", {
+    # Create logger with multiple receivers
+    captured_events <- list()
+    capture_receiver <- function(event) {
+        captured_events <<- append(captured_events, list(event))
+        return(event)
+    }
+    
+    multi_logger <- logger() %>%
+        with_receivers(
+            capture_receiver,
+            to_identity(),  # Pass-through
+            to_void()       # Discard
+        )
+    
+    # Send event through logger
+    test_event <- WARNING("Multi-receiver test")
+    result <- multi_logger(test_event)
+    
+    # Verify all receivers processed the event
+    expect_equal(length(captured_events), 1)
+    expect_equal(captured_events[[1]]$message, "Multi-receiver test")
+    expect_equal(result, test_event)  # Should return original event
+})
+```
+
+### Running Package Tests
+
 The package includes comprehensive tests using `testthat`:
 
 ```r
-# Run tests
+# Run all tests
 devtools::test()
 
 # Run specific test file
 testthat::test_file("tests/testthat/test-logger.R")
+
+# Run tests with coverage
+covr::package_coverage()
 ```
 
 ## Dependencies

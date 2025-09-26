@@ -32,13 +32,13 @@ Loggers return log events invisibly, allowing you to chain multiple loggers toge
 
 ```{r chaining-basic}
 # Create specialized loggers
-log_console <- logger() %>% with_receivers(to_console())
-log_capture <- logger() %>% with_receivers(to_identity())
+log_this_console <- logger() %>% with_receivers(to_console())
+log_this_capture <- logger() %>% with_receivers(to_identity())
 
 # Chain them - event goes through both
 result <- WARNING("System warning") %>%
-    log_console() %>%
-    log_capture()
+    log_this_console() %>%
+    log_this_capture()
 
 # The final result is the original log event
 print(result$message)
@@ -50,31 +50,31 @@ print(result$level_class)
 You can enhance loggers within specific scopes without affecting the parent scope:
 
 ```{r scope-enhancement}
-# Base logger
-base_logger <- logger() %>% with_receivers(to_console())
+```{r scope-enhancement}
+# Base logger in outer scope
+log_this <- logger() %>% with_receivers(to_console())
 
 process_data <- function() {
-    # Add additional logging in this scope
-    enhanced_logger <- base_logger %>% 
-        with_receivers(to_identity())  # Add file logging
+    # Add file logging within this scope only  
+    log_this <- log_this %>% 
+        with_receivers(to_identity())  # represents file logger
     
-    enhanced_logger(NOTE("Processing data with enhanced logging"))
+    log_this(NOTE("Processing data with enhanced logging"))
     
-    # Nested enhancement
-    critical_section <- function() {
-        critical_logger <- enhanced_logger %>%
-            with_receivers(to_void())  # Add silent monitoring
+    # Nested function with additional receivers
+    validate_data <- function() {
+        log_this <- log_this %>%
+            with_receivers(to_void())  # represents alert system
         
-        critical_logger(WARNING("In critical section"))
+        log_this(WARNING("Data validation with full logging stack"))
     }
     
-    critical_section()
+    validate_data()
 }
 
-process_data()
-
-# Base logger unchanged
-base_logger(NOTE("Back to base logging"))
+# Base logger unchanged outside scope
+log_this(NOTE("Back to base logger functionality"))
+```
 ```
 
 ### Logger Pipelines
@@ -102,6 +102,83 @@ audit_log <- create_audit_pipeline()
 audit_log(ERROR("Security violation detected"))
 ```
 
+## Two-Level Filtering Architecture
+
+Understanding `logthis` filtering architecture is crucial for building efficient logging systems:
+
+### Filter Execution Order
+
+1. **Logger-level filter** (`with_limits()`) - Applied first
+2. **Receiver-level filters** (`lower`/`upper`) - Applied second
+
+```{r filtering-architecture}
+# Complex filtering scenario
+multi_filter_logger <- logger() %>%
+    with_receivers(
+        to_console(lower = WARNING, upper = ERROR),     # Console: WARNING to ERROR
+        to_identity(),                                          # File: all events (no receiver filter)
+        to_void()                                              # Monitor: all events (silent)
+    ) %>%
+    with_limits(lower = NOTE, upper = HIGHEST)                 # Logger: NOTE and above
+
+# Event processing flow:
+# CHATTER(10) -> Blocked by logger filter (< 40)
+# NOTE(40)    -> Passes logger, reaches file & monitor only (< 80)  
+# WARNING(80) -> Passes logger, reaches all three receivers
+# ERROR(100)  -> Passes logger, reaches all three receivers
+# HIGHEST(120) -> Blocked by logger filter (> 120) 
+```
+
+### Performance Optimization
+
+Logger-level filtering is more efficient than receiver-level filtering:
+
+```{r performance-filtering}
+# Efficient: Logger blocks low-priority events early
+log_this <- logger() %>%
+    with_receivers(
+        to_console(),
+        to_identity(),  # Represents expensive file I/O
+        to_void()       # Represents expensive network call
+    ) %>%
+    with_limits(lower = ERROR, upper = HIGHEST)  # Block most events at logger level
+
+# Less efficient: All events reach expensive receivers  
+log_this_inefficient <- logger() %>%
+    with_receivers(
+        to_console(lower = ERROR),
+        to_identity(),  # Still processes all events
+        to_void()       # Still processes all events  
+    )
+    # No logger-level filtering
+```
+
+### Environment-Specific Filtering
+
+```{r env-filtering}
+create_env_logger <- function(env = "development") {
+    log_this <- logger()
+    
+    if (env == "production") {
+        # Production: restrictive logger filter, specific receiver filters
+        log_this %>%
+            with_receivers(
+                to_console(lower = ERROR),        # Console: errors only
+                to_identity()                         # File: all events that pass logger
+            ) %>%
+            with_limits(lower = WARNING, upper = HIGHEST)  # Logger: warnings and above
+    } else {
+        # Development: permissive logger filter, receiver-level control
+        log_this %>%
+            with_receivers(
+                to_console(lower = CHATTER),      # Console: verbose output
+                to_identity()                         # File: everything
+            ) %>%
+            with_limits(lower = CHATTER, upper = HIGHEST)  # Logger: everything
+    }
+}
+```
+
 ## Shiny Application Integration
 
 `logthis` provides seamless integration with Shiny applications through the `to_shinyalert()` receiver:
@@ -114,7 +191,7 @@ library(shinyalert)
 # Setup application logger
 app_logger <- logger() %>%
     with_receivers(
-        to_console(min_level = CHATTER),    # All events to console
+        to_console(lower = CHATTER),    # All events to console
         to_shinyalert(lower = ERROR)        # Only errors as alerts
     )
 
@@ -152,11 +229,11 @@ You can create custom receivers to send logs to files, databases, or external se
 
 ```{r custom-receivers}
 # File logging receiver
-to_file <- function(filepath, min_level = LOWEST, max_level = HIGHEST) {
+to_text_file <- function(filepath, lower = LOWEST, upper = HIGHEST) {
     structure(
         function(event) {
-            if (attr(min_level, "level_number") <= event$level_number &&
-                event$level_number <= attr(max_level, "level_number")) {
+            if (attr(lower, "level_number") <= event$level_number &&
+                event$level_number <= attr(upper, "level_number")) {
                 
                 log_line <- paste0(
                     format(event$time, "%Y-%m-%d %H:%M:%S"), " ",
@@ -173,10 +250,10 @@ to_file <- function(filepath, min_level = LOWEST, max_level = HIGHEST) {
 }
 
 # Email notification receiver (pseudo-code)
-to_email <- function(recipient, min_level = ERROR) {
+to_email <- function(recipient, lower = ERROR) {
     structure(
         function(event) {
-            if (event$level_number >= attr(min_level, "level_number")) {
+            if (event$level_number >= attr(lower, "level_number")) {
                 # Send email notification
                 # email_service$send(
                 #     to = recipient,
@@ -198,14 +275,14 @@ For production applications, you typically want different logging configurations
 ```{r production-config}
 # Development logger - verbose output
 dev_logger <- logger() %>%
-    with_receivers(to_console(min_level = CHATTER)) %>%
+    with_receivers(to_console(lower = CHATTER)) %>%
     with_limits(lower = CHATTER, upper = HIGHEST)
 
 # Production logger - structured logging to file with alerts
 prod_logger <- logger() %>%
     with_receivers(
-        to_console(min_level = WARNING),         # Only warnings+ to console
-        # to_file("/var/log/app.log"),          # All events to file
+        to_console(lower = WARNING),         # Only warnings+ to console
+        # to_text_file("/var/log/app.log"),     # All events to file
         # to_email("admin@company.com")          # Critical errors via email
     ) %>%
     with_limits(lower = NOTE, upper = HIGHEST)
@@ -231,7 +308,7 @@ When developing R packages, you can include logging capabilities:
 .onLoad <- function(libname, pkgname) {
     # Create package-level logger
     pkg_logger <- logger() %>%
-        with_receivers(to_console(min_level = WARNING)) %>%
+        with_receivers(to_console(lower = WARNING)) %>%
         with_limits(lower = NOTE, upper = HIGHEST)
     
     # Store in package environment

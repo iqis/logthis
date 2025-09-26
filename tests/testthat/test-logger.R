@@ -237,6 +237,33 @@ test_that("scope-based logger enhancement works", {
     expect_equal(attr(result, "receiver_results"), list(test_event, NULL))
 })
 
+test_that("two-level filtering works correctly", {
+    # Create a logger with both logger-level and receiver-level filtering
+    # Logger allows NOTE+ (40+), console receiver further filters to WARNING+ (80+)
+    filtered_logger <- logger() %>%
+        with_receivers(to_console(lower = WARNING)) %>%
+        with_limits(lower = NOTE, upper = HIGHEST)
+    
+    # Test event below logger limit should be filtered out entirely
+    low_event <- CHATTER("Below logger limit")  # level 20, below NOTE (40)
+    result1 <- filtered_logger(low_event)
+    expect_equal(result1, low_event)
+    expect_null(attr(result1, "receiver_results"))  # No receivers called
+    
+    # Test event that passes logger but not receiver filter  
+    mid_event <- NOTE("Passes logger, blocked by receiver")  # level 40, below WARNING (80)
+    result2 <- filtered_logger(mid_event)
+    expect_equal(result2, mid_event)
+    # Should have receiver results (even if receiver didn't output)
+    expect_length(attr(result2, "receiver_results"), 1)
+    
+    # Test event that passes both filters
+    high_event <- ERROR("Passes both filters")  # level 100, above both limits
+    result3 <- filtered_logger(high_event)
+    expect_equal(result3, high_event)
+    expect_length(attr(result3, "receiver_results"), 1)
+})
+
 test_that("with_limits() returns type `logger`", {
     expect_s3_class({
         logger() %>% with_limits()

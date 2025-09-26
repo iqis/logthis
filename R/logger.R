@@ -39,13 +39,22 @@ logger <- function(){
 
     config <- attr(sys.function(),
                    "config")
-    receiver_results <- config$receivers %>%
-      purrr::map(purrr::exec,
-                 event = event)
     
-    # Return the event to enable chaining, with receiver results as attribute
-    attr(event, "receiver_results") <- receiver_results
-    invisible(event)
+    # Logger-level filtering: check if event level is within logger limits
+    if (event$level_number < config$limits$lower || 
+        event$level_number > config$limits$upper) {
+      # Event is outside logger limits, return early without processing
+      invisible(event)
+    } else {
+      # Event passes logger filter, send to receivers
+      receiver_results <- config$receivers %>%
+        purrr::map(purrr::exec,
+                   event = event)
+      
+      # Return the event to enable chaining, with receiver results as attribute
+      attr(event, "receiver_results") <- receiver_results
+      invisible(event)
+    }
   },
   class = c("logger",
             "function"),
@@ -135,22 +144,35 @@ with_limits <- function(x, lower, upper, ...){
   UseMethod("with_limits", x)
 }
 
-#' Set limits to a logger
+#' Set logger-level limits
 #'
-#' Log events with level number smaller than the lower limit or
-#' higher than the upper limit will be ignored by the logger.
+#' Sets filtering limits at the logger level. Events with level numbers outside
+#' these bounds are dropped entirely before reaching any receivers. This is the
+#' first level of filtering - receiver-level filtering happens second.
 #'
 #' @param logger logger; <logger>
 #' @param lower lower limit; <numeric> | <log_event_level>
-#' @param upper uppwer limit; <numeric> | <log_event_level>
+#' @param upper upper limit; <numeric> | <log_event_level>
 #'
 #' @return logger; <logger>
 #' @export
 #'
 #' @examples
+#' # Logger-level filtering: only WARNING and ERROR events processed
 #' log_this <- logger() %>%
-#'     with_limits(lower = 20,
-#'                 upper = logthis::WARNING)
+#'     with_receivers(to_console()) %>%
+#'     with_limits(lower = WARNING, upper = ERROR)
+#'     
+#' # Two-level filtering example:
+#' # Logger allows NOTE+ events, console receiver further filters to WARNING+
+#' log_this <- logger() %>%
+#'     with_receivers(to_console(lower = WARNING)) %>%
+#'     with_limits(lower = NOTE, upper = HIGHEST)
+#'     
+#' log_this(CHATTER("Blocked by logger"))    # Below logger limit
+#' log_this(NOTE("Blocked by receiver"))     # Passes logger, blocked by receiver
+#' log_this(WARNING("Reaches console"))      # Passes both filters
+#'
 with_limits.logger <- function(x, lower = LOWEST, upper = HIGHEST, ...){
   logger <- x
 
