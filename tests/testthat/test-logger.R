@@ -22,7 +22,26 @@ test_that("logger()'s config attribute exists and has correct elements", {
 
     expect_true(is.list(config))
     expect_setequal(names(config),
-                    c("limits", "receivers"))
+                    c("limits", "receivers", "receiver_calls"))
+})
+
+test_that("logger print method shows configuration", {
+    log_this <- logger() %>%
+        with_receivers(to_console(lower = WARNING)) %>%
+        with_limits(lower = NOTE, upper = ERROR)
+    
+    # Capture print output
+    output <- capture.output(print(log_this))
+    
+    # Should show it's a logger
+    expect_true(any(grepl("<logger>", output)))
+    
+    # Should show level limits
+    expect_true(any(grepl("Level limits:", output)))
+    
+    # Should show receiver information
+    expect_true(any(grepl("Receivers:", output)))
+    expect_true(any(grepl("to_console", output)))
 })
 
 

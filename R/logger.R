@@ -60,7 +60,8 @@ logger <- function(){
             "function"),
   config = list(limits = list(lower = 0,
                               upper = 120),
-                receivers = list()))
+                receivers = list(),
+                receiver_calls = list()))
 }
 
 #' @export
@@ -73,7 +74,8 @@ dummy_logger <- function(){
             "function"),
   config = list(limits = list(lower = 0,
                               upper = 120),
-                receivers = list()))
+                receivers = list(),
+                receiver_calls = list()))
 }
 
 #' Add receivers to a logger
@@ -117,6 +119,8 @@ with_receivers <- function(logger, ..., append = TRUE){
     stop("Argument `logger` must be of type 'logger'. ")
   }
 
+  # Capture the original calls to the receivers
+  receiver_calls <- substitute(list(...))[-1]  # Remove the 'list' part
   receivers <- unlist(list(...))
 
   if (length(receivers) == 0) {
@@ -131,8 +135,15 @@ with_receivers <- function(logger, ..., append = TRUE){
   config <- attr(logger, "config")
   if (append) {
     config$receivers <- c(config$receivers, receivers)
+    # Also store the receiver calls for printing
+    if (is.null(config$receiver_calls)) {
+      config$receiver_calls <- receiver_calls
+    } else {
+      config$receiver_calls <- c(config$receiver_calls, receiver_calls)
+    }
   } else {
     config$receivers <- receivers
+    config$receiver_calls <- receiver_calls
   }
   attr(logger, "config") <- config
 

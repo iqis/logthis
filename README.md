@@ -53,6 +53,13 @@ log_this <- logger() %>%
 log_this(NOTE("Application started"))
 log_this(WARNING("This is a warning message"))
 log_this(ERROR("Something went wrong!"))
+
+# Inspect logger configuration
+print(log_this)
+# <logger>
+# Level limits: 40 to 100
+# Receivers:
+#   [1] to_console()
 ```
 
 **Note:** The package also exports a void logger called `log_this()` that discards all events - perfect for testing or when you want to disable logging without changing your code.
@@ -115,6 +122,14 @@ log_this <- logger() %>%
         to_console(lower = CHATTER),
         to_shinyalert(lower = ERROR)
     )
+
+# Check configuration
+print(log_this)
+# <logger>
+# Level limits: 0 to 120
+# Receivers:
+#   [1] to_console(lower = CHATTER)
+#   [2] to_shinyalert(lower = ERROR)
 ```
 
 ## Advanced Configuration
