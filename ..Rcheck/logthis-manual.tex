@@ -1,0 +1,170 @@
+\nonstopmode{}
+\documentclass[letterpaper]{book}
+\usepackage[times,inconsolata,hyper]{Rd}
+\usepackage{makeidx}
+\makeatletter\@ifl@t@r\fmtversion{2018/04/01}{}{\usepackage[utf8]{inputenc}}\makeatother
+% \usepackage{graphicx} % @USE GRAPHICX@
+\makeindex{}
+\begin{document}
+\chapter*{}
+\begin{center}
+{\textbf{\huge Package `logthis'}}
+\par\bigskip{\large \today}
+\end{center}
+\ifthenelse{\boolean{Rd@use@hyper}}{\hypersetup{pdftitle = {logthis: Structured Logging Framework for R}}}{}
+\ifthenelse{\boolean{Rd@use@hyper}}{\hypersetup{pdfauthor = {iqis}}}{}
+\begin{description}
+\raggedright{}
+\item[Title]\AsIs{Structured Logging Framework for R}
+\item[Version]\AsIs{0.1.0.9000}
+\item[Author]\AsIs{iqis [aut, cre]}
+\item[Maintainer]\AsIs{iqis }\email{iqis@example.com}\AsIs{}
+\item[Description]\AsIs{A flexible, structured logging framework for R applications.
+Provides hierarchical event levels, multiple output receivers (console, files, 
+Shiny alerts), configurable filtering, and rich metadata support. Designed 
+for R packages, Shiny applications, and data analysis pipelines requiring 
+enterprise-level logging capabilities.}
+\item[License]\AsIs{MIT + file LICENSE}
+\item[URL]\AsIs{}\url{https://github.com/iqis/logthis}\AsIs{, }\url{https://iqis.github.io/logthis/}\AsIs{}
+\item[BugReports]\AsIs{}\url{https://github.com/iqis/logthis/issues}\AsIs{}
+\item[Encoding]\AsIs{UTF-8}
+\item[LazyData]\AsIs{true}
+\item[Roxygen]\AsIs{list(markdown = TRUE)}
+\item[RoxygenNote]\AsIs{7.1.1}
+\item[Suggests]\AsIs{testthat (>= 3.0.0), pkgdown, knitr, rmarkdown, shinyalert}
+\item[Imports]\AsIs{magrittr, purrr, crayon, tibble, glue}
+\item[VignetteBuilder]\AsIs{knitr}
+\end{description}
+\Rdcontents{Contents}
+\HeaderA{logger}{Create a logger}{logger}
+\aliasA{dummy\_logger}{logger}{dummy.Rul.logger}
+%
+\begin{Description}
+Create a logger
+\end{Description}
+%
+\begin{Usage}
+\begin{verbatim}
+logger()
+
+dummy_logger()
+\end{verbatim}
+\end{Usage}
+%
+\begin{Value}
+logger; <logger>
+\end{Value}
+%
+\begin{Examples}
+\begin{ExampleCode}
+
+log_this <- logger()
+
+\end{ExampleCode}
+\end{Examples}
+\HeaderA{log\_event\_level}{Log Event Levels}{log.Rul.event.Rul.level}
+%
+\begin{Description}
+Log Event Levels
+\end{Description}
+%
+\begin{Usage}
+\begin{verbatim}
+log_event_level(class, level_number)
+\end{verbatim}
+\end{Usage}
+%
+\begin{Arguments}
+\begin{ldescription}
+\item[\code{class}] S3 class of the event; <character>
+
+\item[\code{level\_number}] level number; <integer>
+\end{ldescription}
+\end{Arguments}
+%
+\begin{Value}
+log event constructor; <function>
+\end{Value}
+\HeaderA{with\_limits}{Set limits to a logger}{with.Rul.limits}
+%
+\begin{Description}
+Log events with level number smaller than the lower limit or
+higher than the upper limit will be ignored by the logger.
+\end{Description}
+%
+\begin{Usage}
+\begin{verbatim}
+with_limits(logger, lower = NULL, upper = NULL)
+\end{verbatim}
+\end{Usage}
+%
+\begin{Arguments}
+\begin{ldescription}
+\item[\code{logger}] logger; <logger>
+
+\item[\code{lower}] lower limit; <numeric> | <log\_event\_level>
+
+\item[\code{upper}] uppwer limit; <numeric> | <log\_event\_level>
+\end{ldescription}
+\end{Arguments}
+%
+\begin{Value}
+logger; <logger>
+\end{Value}
+%
+\begin{Examples}
+\begin{ExampleCode}
+log_this <- logger() %>%
+    with_limits(lower = 20,
+                upper = logthis::WARNING)
+\end{ExampleCode}
+\end{Examples}
+\HeaderA{with\_receivers}{Add receivers to a logger}{with.Rul.receivers}
+%
+\begin{Description}
+Add receivers to a logger
+\end{Description}
+%
+\begin{Usage}
+\begin{verbatim}
+with_receivers(logger, ..., append = TRUE)
+\end{verbatim}
+\end{Usage}
+%
+\begin{Arguments}
+\begin{ldescription}
+\item[\code{logger}] a logger; <logger>
+
+\item[\code{...}] receivers; <log\_receiver>
+
+\item[\code{append}] to append to existing receivers, or to overwrite; <logical>
+\end{ldescription}
+\end{Arguments}
+%
+\begin{Value}
+logger; <logger>
+\end{Value}
+%
+\begin{Examples}
+\begin{ExampleCode}
+
+log_this <- logger() 
+    with_receivers(to_identity(),
+                   to_console())
+
+\end{ExampleCode}
+\end{Examples}
+\HeaderA{\Rpercent{}>\Rpercent{}}{Pipe operator}{.Rpcent.>.Rpcent.}
+\keyword{internal}{\Rpercent{}>\Rpercent{}}
+%
+\begin{Description}
+See \code{magrittr::\LinkA{\Rpercent{}>\Rpercent{}}{.Rpcent.>.Rpcent.}} for details.
+\end{Description}
+%
+\begin{Usage}
+\begin{verbatim}
+lhs %>% rhs
+\end{verbatim}
+\end{Usage}
+\printindex{}
+\end{document}

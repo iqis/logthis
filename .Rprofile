@@ -1,3 +1,4 @@
+source("renv/activate.R")
 # logthis package development profile
 options(
   repos = c(CRAN = "https://cloud.r-project.org/"),

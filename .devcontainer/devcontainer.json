@@ -1,6 +1,8 @@
 {
   "name": "R Development Environment for logthis",
-  "image": "rocker/tidyverse:latest",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
   "postCreateCommand": "R --version && echo '🔬 logthis Development Environment Ready!'",
   "customizations": {
     "vscode": {
