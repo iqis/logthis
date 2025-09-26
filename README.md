@@ -1,0 +1,2 @@
+# logthis
+Logging in R 
