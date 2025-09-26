@@ -47,7 +47,7 @@ test_that("log event level function produces correct type.", {
   expect_equivalent(attributes(test_event)$names,
                     c("message",
                       "time",
-                      "level",
+                      "level_class",
                       "level_number",
                       "custom_element"))
 
@@ -56,7 +56,7 @@ test_that("log event level function produces correct type.", {
 
   expect_s3_class(test_event,
                   "TEST")
-  expect_equal(test_event$level,
+  expect_equal(test_event$level_class,
                "TEST")
   expect_equal(test_event$level_number,
                50)

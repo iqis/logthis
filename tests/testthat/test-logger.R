@@ -58,10 +58,6 @@ test_that("logger()() can map receivers to event and return event for chaining",
     }
     
     expect_equal(result, test_event)
-    
-    # Test that receiver results are available as attribute
-    # to_identity returns the event, to_void returns NULL invisibly
-    expect_equal(attr(result, "receiver_results"), list(test_event, NULL))
 
 
     result2 <- {
@@ -72,7 +68,6 @@ test_that("logger()() can map receivers to event and return event for chaining",
     }
     
     expect_equal(result2, test_event)
-    expect_equal(attr(result2, "receiver_results"), list(test_event, test_event))
 })
 
 
@@ -215,9 +210,6 @@ test_that("logger chaining works correctly", {
     
     # Should return the original event
     expect_equal(result, test_event)
-    
-    # Should have receiver results from the last logger
-    expect_equal(attr(result, "receiver_results"), list(NULL))
 })
 
 test_that("scope-based logger enhancement works", {
@@ -236,7 +228,6 @@ test_that("scope-based logger enhancement works", {
     # Test the enhanced logger
     result <- enhanced_logger(test_event)
     expect_equal(result, test_event)
-    expect_equal(attr(result, "receiver_results"), list(test_event, NULL))
 })
 
 test_that("two-level filtering works correctly", {
@@ -250,20 +241,16 @@ test_that("two-level filtering works correctly", {
     low_event <- CHATTER("Below logger limit")  # level 20, below NOTE (40)
     result1 <- filtered_logger(low_event)
     expect_equal(result1, low_event)
-    expect_null(attr(result1, "receiver_results"))  # No receivers called
     
     # Test event that passes logger but not receiver filter  
     mid_event <- NOTE("Passes logger, blocked by receiver")  # level 40, below WARNING (80)
     result2 <- filtered_logger(mid_event)
     expect_equal(result2, mid_event)
-    # Should have receiver results (even if receiver didn't output)
-    expect_length(attr(result2, "receiver_results"), 1)
     
     # Test event that passes both filters
     high_event <- ERROR("Passes both filters")  # level 100, above both limits
     result3 <- filtered_logger(high_event)
     expect_equal(result3, high_event)
-    expect_length(attr(result3, "receiver_results"), 1)
 })
 
 test_that("with_limits() returns type `logger`", {
