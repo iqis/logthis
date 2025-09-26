@@ -23,7 +23,7 @@ test_that("log_event_level() rounds `level_number`", {
   expect_equal({
     TEST <- log_event_level("TEST", 5.5)
     attr(TEST, "level_number")
-  }, 6)
+  }, structure(6, class = "level_number"))
 })
 
 test_that("log_event_level() rejects level_number outside of [0, 120].", {
@@ -36,7 +36,7 @@ test_that("log_event_level() produces correct type.", {
   expect(is.function(TEST))
   expect_s3_class(TEST, "log_event_level")
   expect_equal(attr(TEST, "level_number"),
-               50)
+               structure(50, class = "level_number"))
 })
 
 
@@ -49,6 +49,7 @@ test_that("log event level function produces correct type.", {
                       "time",
                       "level_class",
                       "level_number",
+                      "tags",
                       "custom_element"))
 
   expect_s3_class(test_event,
@@ -59,7 +60,7 @@ test_that("log event level function produces correct type.", {
   expect_equal(test_event$level_class,
                "TEST")
   expect_equal(test_event$level_number,
-               50)
+               structure(50, class = "level_number"))
   expect_s3_class(test_event$time,
                   "POSIXt")
   expect_equal(test_event$custom_element,

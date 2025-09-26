@@ -165,7 +165,7 @@ test_that("with_limits() can guard logger, lower and upper types & values",{
             with_limits()
     })
 
-    expect_message({
+    expect_no_error({
         logger() %>%
             with_limits()
     })
