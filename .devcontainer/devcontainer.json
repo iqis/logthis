@@ -1,0 +1,51 @@
+{
+  "name": "R Development Environment for logthis",
+  "image": "ubuntu:24.04",
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": true,
+      "configureZshAsDefaultShell": true,
+      "username": "vscode",
+      "userUid": "automatic",
+      "userGid": "automatic"
+    },
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "onCreateCommand": ".devcontainer/setup.sh",
+  "postCreateCommand": "R --version && echo 'R Development Environment Ready!'",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "REditorSupport.r",
+        "ms-vscode.vscode-json",
+        "GitHub.copilot",
+        "GitHub.copilot-chat",
+        "ms-vscode.hexeditor",
+        "GitHub.vscode-github-actions"
+      ],
+      "settings": {
+        "r.rterm.linux": "/usr/bin/R",
+        "r.rpath.linux": "/usr/bin/R",
+        "r.bracketedPaste": true,
+        "r.sessionWatcher": true,
+        "r.rtermSendDelay": 0,
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  },
+  "forwardPorts": [8000, 3838],
+  "portsAttributes": {
+    "8000": {
+      "label": "Development Server",
+      "onAutoForward": "notify"
+    },
+    "3838": {
+      "label": "Shiny App",
+      "onAutoForward": "notify"
+    }
+  },
+  "mounts": [
+    "source=${localWorkspaceFolder}/.Rprofile,target=/home/vscode/.Rprofile,type=bind,consistency=cached"
+  ]
+}

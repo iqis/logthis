@@ -57,9 +57,11 @@ log_this(ERROR("Something went wrong!"))
 # Inspect logger configuration
 print(log_this)
 # <logger>
-# Level limits: 40 to 100
+# Level limits: 40 to 100  
 # Receivers:
 #   [1] to_console()
+#
+# This logger processes events from NOTE (40) to ERROR (100) inclusive
 ```
 
 **Note:** The package also exports a void logger called `log_this()` that discards all events - perfect for testing or when you want to disable logging without changing your code.
@@ -111,7 +113,56 @@ to_identity()  # Returns the event as-is
 to_void()      # Discards the event
 ```
 
-**Note:** Setting `lower`/`upper` boundaries is strictly optional for receivers. When omitted, receivers process all events that pass through the logger-level filter.
+**Note:** Setting `lower`/`upper` boundaries is strictly optional for receivers. When omitted, receivers process all events that pass through the logger-level filter. Level limits are **inclusive** - events with `level_number >= lower AND <= upper` will be processed.
+
+### Creating Custom Receivers
+
+Custom receivers are simple functions that:
+1. Accept a `log_event` object as their only argument
+2. Have class `c("log_receiver", "function")`
+3. Return the event (for chaining) or any other value
+
+```r
+# Simple custom receiver - direct function approach
+my_receiver <- function(event) {
+  cat("CUSTOM LOG:", event$message, "\n")
+  return(event)  # Enable chaining
+}
+class(my_receiver) <- c("log_receiver", "function")
+
+# Use it in a logger
+log_this <- logger() %>% with_receivers(my_receiver)
+
+# Constructor approach with configuration (like built-in receivers)
+to_email <- function(recipient = "admin@company.com", min_level = ERROR) {
+  structure(
+    function(event) {
+      if (event$level_number >= attr(min_level, "level_number")) {
+        # Send email logic here
+        cat("EMAIL to", recipient, ":", event$message, "\n")
+      }
+      return(event)
+    },
+    class = c("log_receiver", "function")
+  )
+}
+
+# Database logging receiver
+to_database <- function(connection) {
+  structure(
+    function(event) {
+      # Insert into database logic
+      query <- paste0("INSERT INTO logs VALUES ('", 
+                     event$time, "', '", event$level_class, "', '", 
+                     event$message, "')")
+      # DBI::dbExecute(connection, query)  # Uncomment with real DB
+      cat("DB INSERT:", query, "\n")
+      return(event)
+    },
+    class = c("log_receiver", "function")
+  )
+}
+```
 
 ### Multiple Receivers Example
 
@@ -136,25 +187,27 @@ print(log_this)
 
 ### Two-Level Filtering System
 
-`logthis` provides a sophisticated two-level filtering system:
+`logthis` provides a sophisticated two-level filtering system with **inclusive** level limits:
 
 1. **Logger-level filtering** (via `with_limits()`) - Filters events before they reach any receivers
 2. **Receiver-level filtering** (via `lower`/`upper` parameters) - Each receiver can further filter events
 
+**All level limits are inclusive**: events with `level_number >= lower AND <= upper` will be processed.
+
 ```r
-# Logger-level: Only WARNING and above reach receivers
-# Receiver-level: Console shows NOTE and above, file shows ERROR only
+# Logger-level: Only WARNING and above reach receivers (80 <= level <= 120)
+# Receiver-level: Console shows NOTE and above (40 <= level <= 120), file shows ERROR only (100 <= level <= 120)
 log_this <- logger() %>%
     with_receivers(
-        to_console(lower = NOTE),        # Receiver filter: NOTE to HIGHEST  
-        to_text_file(lower = ERROR)      # Receiver filter: ERROR to HIGHEST
+        to_console(lower = NOTE),        # Receiver filter: NOTE to HIGHEST (inclusive)
+        to_text_file(lower = ERROR)      # Receiver filter: ERROR to HIGHEST (inclusive)  
     ) %>%
-    with_limits(lower = WARNING, upper = HIGHEST)  # Logger filter: WARNING to HIGHEST
+    with_limits(lower = WARNING, upper = HIGHEST)  # Logger filter: WARNING to HIGHEST (inclusive)
 
 # Result: Console gets WARNING+, File gets ERROR+ (logger filter blocks NOTE/MESSAGE)
-log_this(NOTE("This won't reach any receiver"))        # Blocked by logger
-log_this(WARNING("This goes to console only"))         # Passes logger, blocked by file receiver
-log_this(ERROR("This goes to both console and file"))  # Passes both filters
+log_this(NOTE("This won't reach any receiver"))        # Blocked by logger (40 < 80)
+log_this(WARNING("This goes to console only"))         # Passes logger (80 >= 80), blocked by file receiver (80 < 100)
+log_this(ERROR("This goes to both console and file"))  # Passes both filters (100 >= 80 AND 100 >= 100)
 ```
 
 ### Setting Logger-Level Limits

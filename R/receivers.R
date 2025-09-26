@@ -23,8 +23,11 @@ to_void <- function(){
 #' This is receiver-level filtering - events are filtered after passing through
 #' logger-level filtering set by with_limits().
 #'
-#' @param lower minimum level to display (optional); <log_event_level>
-#' @param upper maximum level to display (optional); <log_event_level>
+#' Level limits are inclusive: events with level_number >= lower AND <= upper
+#' will be processed by this receiver.
+#'
+#' @param lower minimum level to display (inclusive, optional); <log_event_level>
+#' @param upper maximum level to display (inclusive, optional); <log_event_level>
 #'
 #' @return log receiver function; <log_receiver>
 #' @export
@@ -33,14 +36,24 @@ to_void <- function(){
 #' # Basic console output (no filtering)
 #' console_recv <- to_console()
 #' 
-#' # Receiver-level filtering: only show warnings and errors
-#' console_recv <- to_console(lower = WARNING, upper = HIGHEST)
+#' # Receiver-level filtering: only show warnings and errors (inclusive)
+#' console_recv <- to_console(lower = WARNING, upper = ERROR)
 #' 
 #' # Combined with logger-level filtering
 #' log_this <- logger() %>%
-#'     with_receivers(to_console(lower = NOTE)) %>%  # Receiver: NOTE+
-#'     with_limits(lower = CHATTER, upper = HIGHEST)     # Logger: CHATTER+
+#'     with_receivers(to_console(lower = NOTE)) %>%  # Receiver: NOTE+ (inclusive)
+#'     with_limits(lower = CHATTER, upper = HIGHEST)     # Logger: CHATTER+ (inclusive)
 #' # Result: Shows CHATTER+ events, console receiver shows NOTE+ subset
+#' 
+#' # Custom receiver example - simple function approach
+#' my_receiver <- function(event) {
+#'   cat("CUSTOM:", event$message, "\n")
+#'   return(event)
+#' }
+#' class(my_receiver) <- c("log_receiver", "function")
+#' 
+#' # Use custom receiver
+#' log_this <- logger() %>% with_receivers(my_receiver)
 #'
 #' @export
 to_console <- function(lower = LOWEST,
@@ -51,7 +64,7 @@ to_console <- function(lower = LOWEST,
            stop("`event` must be of class `log_event`"))
 
       if (attr(lower, "level_number") <= event$level_number &&
-          event$level_number < attr(upper, "level_number")) {
+          event$level_number <= attr(upper, "level_number")) {
 
         log_color <- function(level_number){
           level_color_lookup <-
@@ -91,7 +104,7 @@ to_shinyalert <- function(lower = WARNING, upper = HIGHEST, ...){
            stop("`event` must be of class `log_event`"))
 
       if (attr(lower, "level_number") <= event$level_number &&
-          event$level_number < attr(upper, "level_number")) {
+          event$level_number <= attr(upper, "level_number")) {
 
         # TODO: add level lookup table
 
@@ -113,7 +126,7 @@ to_notif <- function(lower = NOTE, upper = WARNING, ...){
            stop("`event` must be of class `log_event`"))
 
       if (attr(lower, "level_number") <= event$level_number &&
-          event$level_number < attr(upper, "level_number")) {
+          event$level_number <= attr(upper, "level_number")) {
 
 
         # TODO: build event level mapping
@@ -126,7 +139,36 @@ to_notif <- function(lower = NOTE, upper = WARNING, ...){
               "function"))
 }
 
+#' Text file logging receiver
+#'
+#' Writes log events to a text file with timestamp and level information.
+#' Level limits are inclusive: events with level_number >= lower AND <= upper
+#' will be written to the file.
+#'
+#' @param lower minimum level to log (inclusive, optional); <log_event_level>
+#' @param upper maximum level to log (inclusive, optional); <log_event_level>
+#' @param path file path for log output; <character>
+#' @param append whether to append to existing file; <logical>
+#' @param ... additional arguments (unused)
+#'
+#' @return log receiver function; <log_receiver>
 #' @export
+#'
+#' @examples
+#' # Basic file logging
+#' file_recv <- to_text_file(path = "app.log")
+#' 
+#' # Log only errors and above (inclusive)
+#' error_file <- to_text_file(lower = ERROR, path = "errors.log")
+#' 
+#' # Custom receiver without constructor - direct function approach
+#' simple_file_logger <- function(event) {
+#'   cat(paste(event$time, event$level_class, event$message), 
+#'       file = "simple.log", append = TRUE, sep = "\n")
+#'   return(event)
+#' }
+#' class(simple_file_logger) <- c("log_receiver", "function")
+#'
 to_text_file <- function(lower = LOWEST,
                          upper = HIGHEST,
                          path = "log.txt",
@@ -146,7 +188,7 @@ to_text_file <- function(lower = LOWEST,
            stop("`event` must be of class `log_event`"))
 
       if (attr(lower, "level_number") <= event$level_number &&
-          event$level_number < attr(upper, "level_number")) {
+          event$level_number <= attr(upper, "level_number")) {
 
         with(event,
              cat(paste0(time, " ",

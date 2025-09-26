@@ -40,7 +40,7 @@ logger <- function(){
     config <- attr(sys.function(),
                    "config")
     
-    # Logger-level filtering: check if event level is within logger limits
+    # Logger-level filtering: check if event level is within logger limits (inclusive)
     if (event$level_number < config$limits$lower || 
         event$level_number > config$limits$upper) {
       # Event is outside logger limits, return early without processing
@@ -160,29 +160,32 @@ with_limits <- function(x, lower, upper, ...){
 #' Sets filtering limits at the logger level. Events with level numbers outside
 #' these bounds are dropped entirely before reaching any receivers. This is the
 #' first level of filtering - receiver-level filtering happens second.
+#' 
+#' Limits are inclusive: events with level_number >= lower AND <= upper
+#' will be processed by the logger.
 #'
 #' @param logger logger; <logger>
-#' @param lower lower limit; <numeric> | <log_event_level>
-#' @param upper upper limit; <numeric> | <log_event_level>
+#' @param lower lower limit (inclusive); <numeric> | <log_event_level>
+#' @param upper upper limit (inclusive); <numeric> | <log_event_level>
 #'
 #' @return logger; <logger>
 #' @export
 #'
 #' @examples
-#' # Logger-level filtering: only WARNING and ERROR events processed
+#' # Logger-level filtering: only WARNING and ERROR events processed (inclusive)
 #' log_this <- logger() %>%
 #'     with_receivers(to_console()) %>%
 #'     with_limits(lower = WARNING, upper = ERROR)
 #'     
 #' # Two-level filtering example:
-#' # Logger allows NOTE+ events, console receiver further filters to WARNING+
+#' # Logger allows NOTE+ events (inclusive), console receiver further filters to WARNING+ (inclusive)
 #' log_this <- logger() %>%
 #'     with_receivers(to_console(lower = WARNING)) %>%
 #'     with_limits(lower = NOTE, upper = HIGHEST)
 #'     
-#' log_this(CHATTER("Blocked by logger"))    # Below logger limit
-#' log_this(NOTE("Blocked by receiver"))     # Passes logger, blocked by receiver
-#' log_this(WARNING("Reaches console"))      # Passes both filters
+#' log_this(CHATTER("Blocked by logger"))    # Below logger limit (40 < 40)
+#' log_this(NOTE("Blocked by receiver"))     # Passes logger (40 >= 40), blocked by receiver (40 < 80)
+#' log_this(WARNING("Reaches console"))      # Passes both filters (80 >= 40 AND 80 >= 80)
 #'
 with_limits.logger <- function(x, lower = LOWEST, upper = HIGHEST, ...){
   logger <- x
