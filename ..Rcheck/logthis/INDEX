@@ -1,4 +1,0 @@
-log_event_level                     Log Event Levels
-logger                              Create a logger
-with_limits                         Set limits to a logger
-with_receivers                      Add receivers to a logger

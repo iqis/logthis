@@ -13,7 +13,7 @@
 #' # Create a custom receiver using the constructor
 #' my_receiver <- receiver(function(event) {
 #'   cat("LOG:", event$message, "\n")
-#'   return(event)
+#'   invisible(NULL)
 #' })
 #' 
 #' # This will error - wrong argument name
@@ -44,7 +44,7 @@ receiver <- function(func) {
 #' @export
 to_identity <- function(){
   receiver(function(event){
-    event
+    event  # This one returns the event for testing purposes
   })
 }
 
@@ -86,7 +86,7 @@ to_void <- function(){
 #' # Custom receiver example using the receiver() constructor
 #' my_receiver <- receiver(function(event) {
 #'   cat("CUSTOM:", event$message, "\n")
-#'   return(event)
+#'   invisible(NULL)
 #' })
 #' 
 #' # Use custom receiver
@@ -127,11 +127,27 @@ to_console <- function(lower = LOWEST,
                                                 message,
                                                 "\n"))))
       }
-      event
+      invisible(NULL)
       })
 }
 
+#' Shiny alert receiver
+#'
+#' Displays log events as Shiny alert popups using the shinyalert package.
+#' Requires the 'shinyalert' package and an active Shiny session.
+#'
+#' @param lower minimum level to display (inclusive, optional); <log_event_level>
+#' @param upper maximum level to display (inclusive, optional); <log_event_level>
+#' @param ... additional arguments passed to shinyalert::shinyalert
+#'
+#' @return log receiver function; <log_receiver>
 #' @export
+#'
+#' @examples
+#' \dontrun{
+#' # Requires shinyalert package and active Shiny session
+#' alert_recv <- to_shinyalert()
+#' }
 to_shinyalert <- function(lower = WARNING, upper = HIGHEST, ...){
   receiver(
     function(event){
@@ -141,17 +157,41 @@ to_shinyalert <- function(lower = WARNING, upper = HIGHEST, ...){
       if (attr(lower, "level_number") <= event$level_number &&
           event$level_number <= attr(upper, "level_number")) {
 
-        # TODO: add level lookup table
+        # Check if shinyalert is available
+        if (!requireNamespace("shinyalert", quietly = TRUE)) {
+          warning("shinyalert package is required for to_shinyalert() receiver but is not installed. ",
+                  "Install with: install.packages('shinyalert')")
+          return(invisible(NULL))
+        }
 
+        # TODO: add level lookup table
         shinyalert::shinyalert(text = event$message,
                                type = "error",
                                ...)
       }
-      event
+      invisible(NULL)
     })
 }
 
+#' Shiny notification receiver
+#'
+#' Displays log events as Shiny notifications. Requires the 'shiny' package
+#' to be installed and a Shiny session to be active.
+#'
+#' @param lower minimum level to display (inclusive, optional); <log_event_level>
+#' @param upper maximum level to display (inclusive, optional); <log_event_level>  
+#' @param ... additional arguments passed to shiny::showNotification
+#'
+#' @return log receiver function; <log_receiver>
 #' @export
+#'
+#' @examples
+#' \dontrun{
+#' # Requires shiny package and active Shiny session
+#' if (requireNamespace("shiny", quietly = TRUE)) {
+#'   notif_recv <- to_notif()
+#' }
+#' }
 to_notif <- function(lower = NOTE, upper = WARNING, ...){
   receiver(
     function(event){
@@ -161,12 +201,18 @@ to_notif <- function(lower = NOTE, upper = WARNING, ...){
       if (attr(lower, "level_number") <= event$level_number &&
           event$level_number <= attr(upper, "level_number")) {
 
+        # Check if shiny is available
+        if (!requireNamespace("shiny", quietly = TRUE)) {
+          warning("shiny package is required for to_notif() receiver but is not installed. ",
+                  "Install with: install.packages('shiny')")
+          return(invisible(NULL))
+        }
 
         # TODO: build event level mapping
         shiny::showNotification(event$message,
                                 ...)
       }
-      event
+      invisible(NULL)
     })
 }
 
@@ -196,7 +242,7 @@ to_notif <- function(lower = NOTE, upper = WARNING, ...){
 #' simple_file_logger <- receiver(function(event) {
 #'   cat(paste(event$time, event$level_class, event$message), 
 #'       file = "simple.log", append = TRUE, sep = "\n")
-#'   return(event)
+#'   invisible(NULL)
 #' })
 #'
 to_text_file <- function(lower = LOWEST,
@@ -228,7 +274,7 @@ to_text_file <- function(lower = LOWEST,
                  file = path,
                  append = TRUE))
       }
-      event
+      invisible(NULL)
     })
 }
 

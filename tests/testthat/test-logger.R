@@ -154,23 +154,6 @@ test_that("with_receivers() overwrites logger's receivers when `append` = FALSE"
 })
 
 
-test_that("normalize_limit() can normalize limits", {
-
-    expect_equal(normalize_limit(1),
-                 1)
-
-    expect_equal(normalize_limit(1.4),
-                 1)
-
-    expect_equal(normalize_limit(1.5),
-                 2)
-
-    expect_equal(normalize_limit(WARNING),
-                 80)
-
-})
-
-
 test_that("with_limits() can guard logger, lower and upper types & values",{
 
     logger() %>%

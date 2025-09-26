@@ -117,51 +117,66 @@ to_void()      # Discards the event
 
 ### Creating Custom Receivers
 
-Custom receivers are simple functions that:
-1. Accept a `log_event` object as their only argument
-2. Have class `c("log_receiver", "function")`
-3. Return the event (for chaining) or any other value
+Custom receivers are functions that process log events for side effects (writing to console, files, databases, etc.). They should return `NULL` since they're called for their side effects only.
+
+The recommended approach is to use the `receiver()` constructor function, which validates the receiver interface:
 
 ```r
-# Simple custom receiver - direct function approach
-my_receiver <- function(event) {
+# Using the receiver() constructor (recommended)
+my_receiver <- receiver(function(event) {
   cat("CUSTOM LOG:", event$message, "\n")
-  return(event)  # Enable chaining
-}
-class(my_receiver) <- c("log_receiver", "function")
+  invisible(NULL)  # Receivers return NULL for side effects
+})
 
 # Use it in a logger
 log_this <- logger() %>% with_receivers(my_receiver)
 
-# Constructor approach with configuration (like built-in receivers)
-to_email <- function(recipient = "admin@company.com", min_level = ERROR) {
-  structure(
-    function(event) {
-      if (event$level_number >= attr(min_level, "level_number")) {
-        # Send email logic here
-        cat("EMAIL to", recipient, ":", event$message, "\n")
-      }
-      return(event)
-    },
-    class = c("log_receiver", "function")
-  )
+# Email notification receiver with configuration
+to_email <- function(recipient = "admin@company.com", min_level = ERROR()) {
+  receiver(function(event) {
+    if (event$level_number >= attr(min_level, "level_number")) {
+      # Send email logic here
+      cat("EMAIL to", recipient, ":", event$message, "\n")
+    }
+    invisible(NULL)
+  })
 }
 
 # Database logging receiver
 to_database <- function(connection) {
-  structure(
-    function(event) {
-      # Insert into database logic
-      query <- paste0("INSERT INTO logs VALUES ('", 
-                     event$time, "', '", event$level_class, "', '", 
-                     event$message, "')")
-      # DBI::dbExecute(connection, query)  # Uncomment with real DB
-      cat("DB INSERT:", query, "\n")
-      return(event)
-    },
-    class = c("log_receiver", "function")
-  )
+  receiver(function(event) {
+    # Insert into database logic
+    query <- paste0("INSERT INTO logs VALUES ('", 
+                   event$time, "', '", event$level_class, "', '", 
+                   event$message, "')")
+    # DBI::dbExecute(connection, query)  # Uncomment with real DB
+    cat("DB INSERT:", query, "\n")
+    invisible(NULL)
+  })
 }
+
+# Slack notification receiver
+to_slack <- function(webhook_url, channel = "#alerts") {
+  receiver(function(event) {
+    # Only send ERROR and above to Slack
+    if (event$level_number >= 100) {
+      payload <- list(
+        text = paste("🚨", event$level_class, ":", event$message),
+        channel = channel
+      )
+      # httr::POST(webhook_url, body = payload, encode = "json")  # Uncomment with real webhook
+      cat("SLACK:", payload$text, "to", channel, "\n")
+    }
+    invisible(NULL)
+  })
+}
+```
+
+**Key Requirements for Custom Receivers:**
+- Must accept exactly one argument named `event`
+- Should return `invisible(NULL)` (called for side effects)
+- Use `receiver()` constructor for validation and proper class assignment
+- Access event properties: `event$message`, `event$time`, `event$level_class`, `event$level_number`
 ```
 
 ### Multiple Receivers Example

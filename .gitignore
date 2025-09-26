@@ -1,14 +1,21 @@
-# R package development
+# R package development artifacts
 .Rproj.user
 .Rhistory
 .RData
 .Ruserdata
 
-# Package builds
+# Generated documentation and metadata (roxygen2)
+man/
+NAMESPACE
+
+# Package builds and checks
 *.tar.gz
 *.tgz
+*.Rcheck/
+..Rcheck/
+.Rcheck/
 
-# Documentation
+# Documentation builds
 docs/
 inst/doc
 
@@ -19,9 +26,23 @@ _site/
 .vscode/
 *.Rproj
 
-# OS
+# OS generated files
 .DS_Store
 Thumbs.db
 
 # Logs
 *.log
+
+# renv (if using project-local package management)
+renv/library/
+renv/python/
+renv/staging/
+
+# Temporary files
+*~
+\#*\#
+.\#*
+
+# R session data
+.RData
+.Rhistory

@@ -148,7 +148,16 @@ with_receivers <- function(logger, ..., append = TRUE){
   logger
 }
 
-
+#' Generic function for setting limits
+#' 
+#' This is a generic function for setting limits on loggers and receivers.
+#' See the specific methods for details.
+#' 
+#' @param x The object to set limits on
+#' @param lower Lower limit
+#' @param upper Upper limit
+#' @param ... Additional arguments passed to methods
+#' @export
 with_limits <- function(x, lower, upper, ...){
   UseMethod("with_limits", x)
 }
