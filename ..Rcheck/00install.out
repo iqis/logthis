@@ -1,0 +1,28 @@
+🔬 logthis Development Environment Ready!
+📍 Working directory: /home/runner/work/logthis/logthis 
+📊 R version: R version 4.3.3 (2024-02-29) 
+* installing *source* package ‘logthis’ ...
+** using staged installation
+** R
+** inst
+** byte-compile and prepare package for lazy loading
+🔬 logthis Development Environment Ready!
+📍 Working directory: /home/runner/work/logthis/logthis 
+📊 R version: R version 4.3.3 (2024-02-29) 
+** help
+*** installing help indices
+** building package indices
+🔬 logthis Development Environment Ready!
+📍 Working directory: /home/runner/work/logthis/logthis 
+📊 R version: R version 4.3.3 (2024-02-29) 
+** installing vignettes
+** testing if installed package can be loaded from temporary location
+🔬 logthis Development Environment Ready!
+📍 Working directory: /home/runner/work/logthis/logthis 
+📊 R version: R version 4.3.3 (2024-02-29) 
+** testing if installed package can be loaded from final location
+🔬 logthis Development Environment Ready!
+📍 Working directory: /home/runner/work/logthis/logthis 
+📊 R version: R version 4.3.3 (2024-02-29) 
+** testing if installed package keeps a record of temporary installation path
+* DONE (logthis)
