@@ -1,20 +1,58 @@
+#' Create a log receiver function with validation
+#'
+#' Constructor function that validates receiver functions conform to the required
+#' interface: exactly one argument named 'event'. This ensures receivers can
+#' properly handle log events passed from the logger.
+#'
+#' @param func A function that accepts one argument named 'event'
+#'
+#' @return A validated log receiver function with proper class attributes
+#' @export
+#'
+#' @examples
+#' # Create a custom receiver using the constructor
+#' my_receiver <- receiver(function(event) {
+#'   cat("LOG:", event$message, "\n")
+#'   return(event)
+#' })
+#' 
+#' # This will error - wrong argument name
+#' \dontrun{
+#' bad_receiver <- receiver(function(log_event) {
+#'   cat(log_event$message, "\n")
+#' })
+#' }
+receiver <- function(func) {
+  if (!is.function(func)) {
+    stop("Receiver must be a function")
+  }
+  
+  args <- formals(func)
+  
+  if (length(args) != 1) {
+    stop("Receiver function must have exactly one argument, got ", length(args))
+  }
+  
+  if (names(args)[1] != "event") {
+    stop("Receiver function argument must be named 'event', got '", names(args)[1], "'")
+  }
+  
+  structure(func, class = c("log_receiver", "function"))
+}
+
 # Dummy receivers, mainly for testing
 #' @export
 to_identity <- function(){
-  structure(function(event){
+  receiver(function(event){
     event
-  },
-  class = c("log_receiver",
-            "function"))
+  })
 }
 
 #' @export
 to_void <- function(){
-  structure(function(event){
+  receiver(function(event){
     invisible(NULL)
-  },
-  class = c("log_receiver",
-            "function"))
+  })
 }
 
 #' Console receiver with color-coded output
@@ -45,12 +83,11 @@ to_void <- function(){
 #'     with_limits(lower = CHATTER, upper = HIGHEST)     # Logger: CHATTER+ (inclusive)
 #' # Result: Shows CHATTER+ events, console receiver shows NOTE+ subset
 #' 
-#' # Custom receiver example - simple function approach
-#' my_receiver <- function(event) {
+#' # Custom receiver example using the receiver() constructor
+#' my_receiver <- receiver(function(event) {
 #'   cat("CUSTOM:", event$message, "\n")
 #'   return(event)
-#' }
-#' class(my_receiver) <- c("log_receiver", "function")
+#' })
 #' 
 #' # Use custom receiver
 #' log_this <- logger() %>% with_receivers(my_receiver)
@@ -58,7 +95,7 @@ to_void <- function(){
 #' @export
 to_console <- function(lower = LOWEST,
                        upper = HIGHEST){
-  structure(
+  receiver(
     function(event){
       `if`(!inherits(event, "log_event"),
            stop("`event` must be of class `log_event`"))
@@ -91,14 +128,12 @@ to_console <- function(lower = LOWEST,
                                                 "\n"))))
       }
       event
-      },
-      class = c("log_receiver",
-              "function"))
+      })
 }
 
 #' @export
 to_shinyalert <- function(lower = WARNING, upper = HIGHEST, ...){
-  structure(
+  receiver(
     function(event){
       `if`(!inherits(event, "log_event"),
            stop("`event` must be of class `log_event`"))
@@ -113,14 +148,12 @@ to_shinyalert <- function(lower = WARNING, upper = HIGHEST, ...){
                                ...)
       }
       event
-    },
-    class = c("log_receiver",
-              "function"))
+    })
 }
 
 #' @export
 to_notif <- function(lower = NOTE, upper = WARNING, ...){
-  structure(
+  receiver(
     function(event){
       `if`(!inherits(event, "log_event"),
            stop("`event` must be of class `log_event`"))
@@ -134,9 +167,7 @@ to_notif <- function(lower = NOTE, upper = WARNING, ...){
                                 ...)
       }
       event
-    },
-    class = c("log_receiver",
-              "function"))
+    })
 }
 
 #' Text file logging receiver
@@ -161,13 +192,12 @@ to_notif <- function(lower = NOTE, upper = WARNING, ...){
 #' # Log only errors and above (inclusive)
 #' error_file <- to_text_file(lower = ERROR, path = "errors.log")
 #' 
-#' # Custom receiver without constructor - direct function approach
-#' simple_file_logger <- function(event) {
+#' # Custom file receiver using the receiver() constructor
+#' simple_file_logger <- receiver(function(event) {
 #'   cat(paste(event$time, event$level_class, event$message), 
 #'       file = "simple.log", append = TRUE, sep = "\n")
 #'   return(event)
-#' }
-#' class(simple_file_logger) <- c("log_receiver", "function")
+#' })
 #'
 to_text_file <- function(lower = LOWEST,
                          upper = HIGHEST,
@@ -182,7 +212,7 @@ to_text_file <- function(lower = LOWEST,
 
   con <- file(path)
 
-  structure(
+  receiver(
     function(event){
       `if`(!inherits(event, "log_event"),
            stop("`event` must be of class `log_event`"))
@@ -199,8 +229,6 @@ to_text_file <- function(lower = LOWEST,
                  append = TRUE))
       }
       event
-    },
-    class = c("log_receiver",
-              "function"))
+    })
 }
 

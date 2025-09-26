@@ -47,12 +47,10 @@ logger <- function(){
       invisible(event)
     } else {
       # Event passes logger filter, send to receivers
-      receiver_results <- config$receivers %>%
-        purrr::map(purrr::exec,
-                   event = event)
+      config$receivers %>%
+        purrr::walk(purrr::exec, event = event)
       
-      # Return the event to enable chaining, with receiver results as attribute
-      attr(event, "receiver_results") <- receiver_results
+      # Return the event to enable chaining
       invisible(event)
     }
   },
