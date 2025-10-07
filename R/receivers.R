@@ -353,7 +353,9 @@ to_text_file <- function(lower = LOWEST,
 #'     )
 #'
 #' log_this(NOTE("User login", tags = c("auth", "user:123")))
-#' # Outputs: {"time":"2025-10-07 18:30:00","level":"NOTE","level_number":40,"message":"User login","tags":["auth","user:123"]}
+#' # Outputs (one JSON object per line):
+#' # {"time":"2025-10-07 18:30:00","level":"NOTE","level_number":40,
+#' #  "message":"User login","tags":["auth","user:123"]}
 #' }
 #'
 to_json_file <- function(lower = LOWEST,
