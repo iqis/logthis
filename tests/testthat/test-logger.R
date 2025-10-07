@@ -1,5 +1,4 @@
 library(testthat)
-library(purrr)
 
 test_that("logger() & void_logger() produces right type.", {
     log_this <- logger()

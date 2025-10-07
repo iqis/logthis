@@ -1,5 +1,4 @@
-#' @importFrom crayon white silver green yellow red bold
-#' @importFrom purrr compose
+#' @importFrom crayon white silver green yellow red bold cyan
 NULL
 
 guard_level_type <- function(level){
@@ -24,8 +23,8 @@ guard_level_type <- function(level){
     crayon::green,                              # NOTE
     crayon::yellow,                             # MESSAGE
     crayon::red,                                # WARNING
-    purrr::compose(crayon::red, crayon::bold),  # ERROR
-    purrr::compose(crayon::red, crayon::bold)   # CRITICAL + HIGHEST
+    function(x) crayon::bold(crayon::red(x)),   # ERROR
+    function(x) crayon::bold(crayon::red(x))    # CRITICAL + HIGHEST
   )
 )
 

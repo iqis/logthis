@@ -28,7 +28,6 @@ Suggests:
     shiny
 Imports:
     magrittr,
-    purrr,
     crayon,
     glue,
     jsonlite

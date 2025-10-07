@@ -59,8 +59,20 @@ logger <- function(){
       }
 
       # Event passes logger filter, send to receivers with error handling
-      purrr::imap(config$receivers, function(receiver, idx) {
-        result <- purrr::safely(purrr::exec)(receiver, event = event)
+      for (idx in seq_along(config$receivers)) {
+        receiver <- config$receivers[[idx]]
+
+        # Execute receiver with error handling
+        result <- tryCatch(
+          {
+            receiver(event = event)
+            list(result = NULL, error = NULL)
+          },
+          error = function(e) {
+            list(result = NULL, error = e)
+          }
+        )
+
         if (!is.null(result$error)) {
           # Get receiver label for error reporting
           receiver_label <- if (idx <= length(config$receiver_labels)) {
@@ -86,8 +98,7 @@ logger <- function(){
             }
           )
         }
-        invisible(NULL)
-      })
+      }
 
       # Return the event to enable chaining
       invisible(event)
@@ -175,26 +186,27 @@ with_receivers <- function(logger, ..., append = TRUE){
   }
 
   # Auto-convert formatters to receivers
-  receivers <- purrr::map(receivers_or_formatters,
-                          function(x) {
-                            if (inherits(x, "log_formatter")) {
-                              # Convert formatter to receiver
-                              .formatter_to_receiver(x)
-                            } else if (inherits(x, "log_receiver")) {
-                              # Already a receiver
-                              x
-                            } else {
-                              stop("Arguments must be log_receiver or log_formatter.\n",
-                                   "  Got: ", class(x)[1], "\n",
-                                   "  Solution: Use receiver functions like to_console(), to_text_file(), etc.\n",
-                                   "  Or: Create formatted receiver with to_text() %>% on_local() pattern\n",
-                                   "  See: .claude/use-cases.md for examples")
-                            }
-                          })
+  receivers <- lapply(receivers_or_formatters,
+                      function(x) {
+                        if (inherits(x, "log_formatter")) {
+                          # Convert formatter to receiver
+                          .formatter_to_receiver(x)
+                        } else if (inherits(x, "log_receiver")) {
+                          # Already a receiver
+                          x
+                        } else {
+                          stop("Arguments must be log_receiver or log_formatter.\n",
+                               "  Got: ", class(x)[1], "\n",
+                               "  Solution: Use receiver functions like to_console(), to_text_file(), etc.\n",
+                               "  Or: Create formatted receiver with to_text() %>% on_local() pattern\n",
+                               "  See: .claude/use-cases.md for examples")
+                        }
+                      })
 
   # Convert receiver calls to plain text labels for error reporting
-  receiver_labels <- purrr::map_chr(as.list(receiver_calls),
-                                    ~deparse(., width.cutoff = 500))
+  receiver_labels <- vapply(as.list(receiver_calls),
+                            function(x) deparse(x, width.cutoff = 500),
+                            character(1))
 
   config <- attr(logger, "config")
   if (append) {
@@ -466,10 +478,11 @@ with_tags.log_event <- function(x, ..., append = TRUE){
 
   # Validate tags before unlisting to catch type errors
   tag_list <- list(...)
-  purrr::walk(tag_list,
-              ~ {if (!is.character(.)) {
-                stop("Tags must be character strings")
-              }})
+  for (tag in tag_list) {
+    if (!is.character(tag)) {
+      stop("Tags must be character strings")
+    }
+  }
 
   new_tags <- unlist(tag_list)
 
@@ -492,10 +505,11 @@ with_tags.log_event_level <- function(x, ..., append = TRUE){
 
   # Validate tags before unlisting to catch type errors
   tag_list <- list(...)
-  purrr::walk(tag_list,
-              ~ {if (!is.character(.)) {
-                stop("Tags must be character strings")
-              }})
+  for (tag in tag_list) {
+    if (!is.character(tag)) {
+      stop("Tags must be character strings")
+    }
+  }
 
   new_tags <- unlist(tag_list)
 
@@ -551,10 +565,11 @@ with_tags.logger <- function(x, ..., append = TRUE){
   }
 
   # Check each tag is character before unlisting (to prevent coercion)
-  purrr::walk(tag_list,
-              ~ {if (!is.character(.)) {
-                stop("Argument `...` (tags) must be of type 'character'")
-              }})
+  for (tag in tag_list) {
+    if (!is.character(tag)) {
+      stop("Argument `...` (tags) must be of type 'character'")
+    }
+  }
 
   tags <- unlist(tag_list)
 

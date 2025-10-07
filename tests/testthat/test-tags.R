@@ -1,5 +1,4 @@
 library(testthat)
-library(purrr)
 
 test_that("with_tags.log_event adds tags to individual events", {
   event <- NOTE("Test message")

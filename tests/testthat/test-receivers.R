@@ -1,13 +1,14 @@
 library(testthat)
-library(purrr)
 
 test_that("all receivers generate the correct type", {
-  list(to_identity,
-       to_void,
-       to_console) %>%
-    map(exec) %>%
-    map(~ expect_s3_class(., "function")) %>%
-    map(~ expect_s3_class(., "log_receiver"))
+  receivers <- list(to_identity(),
+                    to_void(),
+                    to_console())
+
+  for (recv in receivers) {
+    expect_s3_class(recv, "function")
+    expect_s3_class(recv, "log_receiver")
+  }
 })
 
 TEST <- log_event_level("TEST", 50)
