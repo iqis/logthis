@@ -67,3 +67,81 @@ test_that("log event level function produces correct type.", {
                999)
 })
 
+
+test_that("event message supports glue interpolation", {
+  user_id <- 123
+  amount <- 99.99
+  event <- TEST("User {user_id} paid {amount}", user_id = user_id, amount = amount)
+
+  # Message should be interpolated
+  expect_equal(event$message, "User 123 paid 99.99")
+
+  # Custom fields should still be attached
+  expect_equal(event$user_id, 123)
+  expect_equal(event$amount, 99.99)
+})
+
+
+test_that("event message without template syntax not interpolated", {
+  # Plain message should pass through unchanged
+  event <- TEST("Plain message", user_id = 123)
+  expect_equal(event$message, "Plain message")
+  expect_equal(event$user_id, 123)
+})
+
+
+test_that("custom fields reject functions", {
+  expect_error(
+    TEST("Test", bad_field = function() NULL),
+    "cannot be a function"
+  )
+})
+
+
+test_that("custom fields reject environments", {
+  expect_error(
+    TEST("Test", bad_field = new.env()),
+    "cannot be an environment"
+  )
+})
+
+
+test_that("custom fields reject connections", {
+  skip_on_cran()
+  tmp_file <- tempfile()
+  conn <- file(tmp_file, "w")
+  expect_error(
+    TEST("Test", bad_field = conn),
+    "cannot be a connection"
+  )
+  close(conn)
+  unlink(tmp_file)
+})
+
+
+test_that("custom fields reject large strings", {
+  large_string <- paste(rep("a", 11000), collapse = "")
+  expect_error(
+    TEST("Test", large_field = large_string),
+    "too large"
+  )
+})
+
+
+test_that("custom fields warn about large vectors", {
+  large_vector <- 1:1001
+  expect_warning(
+    TEST("Test", large_field = large_vector),
+    "large vector"
+  )
+})
+
+
+test_that("custom fields warn about large data.frames", {
+  large_df <- data.frame(x = 1:11, y = 1:11)
+  expect_warning(
+    TEST("Test", large_field = large_df),
+    "large data.frame"
+  )
+})
+

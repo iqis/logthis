@@ -4,8 +4,12 @@
 #'
 #' @param level_class S3 class of the event; <character>
 #' @param level_number level number; <integer>
-#' @param message The log message when using the returned constructor function
-#' @param ... Additional parameters passed to the log event when using the returned constructor function
+#' @param message The log message when using the returned constructor function.
+#'   Supports glue template syntax: `"User {user_id} paid {amount}"`.
+#'   Template variables are interpolated from custom fields in `...`.
+#' @param ... Additional parameters passed to the log event when using the returned constructor function.
+#'   These become custom event fields and are available for template interpolation.
+#'   Fields are validated for size and complexity (see Performance Notes).
 #'
 #' @return log event constructor; <function>
 #' @export
@@ -15,6 +19,21 @@
 #' log_event_level(level_class: string, level_number: numeric) -> log_event_level
 #'   where log_event_level = function(message: string = "", ...) -> log_event
 #' ```
+#'
+#' @section Performance Notes:
+#' **Glue interpolation cost is paid for ALL events, even filtered ones.**
+#'
+#' Example: `DEBUG("User {user_id} logged in", user_id = 123)` interpolates
+#' immediately, even if DEBUG level is filtered by logger. This is a
+#' trade-off for user-friendly syntax.
+#'
+#' For high-volume logging, consider:
+#' - Using `void_logger()` in production
+#' - Setting appropriate logger limits to filter early
+#' - Avoiding verbose levels (TRACE, DEBUG) in hot paths
+#'
+#' **Field validation**: Custom fields are checked for size/complexity to prevent
+#' memory issues. Functions, environments, and very large objects will error.
 log_event_level <- function(level_class, level_number){
 
   `if`(!is.character(level_class),
@@ -27,6 +46,60 @@ log_event_level <- function(level_class, level_number){
 
   structure(
     function(message = "", ...){
+      # Capture custom fields
+      custom_fields <- list(...)
+
+      # Validate custom fields
+      if (length(custom_fields) > 0) {
+        for (field_name in names(custom_fields)) {
+          field_value <- custom_fields[[field_name]]
+
+          # Reject dangerous types
+          if (is.function(field_value)) {
+            stop("Custom field '", field_name, "' cannot be a function.\n",
+                 "  Solution: Log a description or identifier instead")
+          }
+          if (is.environment(field_value)) {
+            stop("Custom field '", field_name, "' cannot be an environment.\n",
+                 "  Solution: Extract specific values from the environment")
+          }
+          if (inherits(field_value, "connection")) {
+            stop("Custom field '", field_name, "' cannot be a connection.\n",
+                 "  Solution: Log connection details (host, port) instead")
+          }
+
+          # Warn about complex types
+          if (is.data.frame(field_value) && nrow(field_value) > 10) {
+            warning("Custom field '", field_name, "' is a large data.frame (",
+                    nrow(field_value), " rows).\n",
+                    "  Consider logging summary statistics instead", call. = FALSE)
+          }
+
+          # Check size limits
+          if (is.character(field_value)) {
+            total_size <- sum(nchar(field_value))
+            if (total_size > 10000) {  # 10KB limit
+              stop("Custom field '", field_name, "' is too large (",
+                   total_size, " characters).\n",
+                   "  Solution: Truncate string or log a summary")
+            }
+          }
+
+          if (is.atomic(field_value) && length(field_value) > 1000) {
+            warning("Custom field '", field_name, "' is a large vector (",
+                    length(field_value), " elements).\n",
+                    "  Consider logging length or summary instead", call. = FALSE)
+          }
+        }
+      }
+
+      # Interpolate message with glue if template syntax present
+      if (grepl("\\{[^}]+\\}", message) && length(custom_fields) > 0) {
+        message <- glue::glue(message,
+                              .envir = list2env(custom_fields, parent = emptyenv()),
+                              .open = "{", .close = "}")
+      }
+
       structure(list(message = message,
                      time = Sys.time(),
                      level_class = level_class,
