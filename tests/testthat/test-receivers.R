@@ -132,8 +132,46 @@ test_that("to_text_file() without rotation does not create rotated files", {
   unlink(log_path)
 })
 
-# # verify output
-# test_that("...", {
-#   expect_output(to_console()(test_event()),
-#                 "sth")
-# })
+test_that("logger handles receiver failures gracefully", {
+  # Create a failing receiver for testing
+  failing_receiver <- function() {
+    receiver(function(event) {
+      stop("Simulated receiver failure")
+    })
+  }
+
+  # Logger with failing receiver should still execute other receivers
+  captured_output <- capture.output({
+    log_test <- logger() %>%
+      with_receivers(
+        to_console(),
+        failing_receiver(),
+        to_console()
+      )
+
+    log_test(NOTE("This message should appear despite receiver #2 failing"))
+  })
+
+  # Should see the original message twice (from receiver #1 and #3)
+  note_lines <- grep("\\[NOTE\\].*This message should appear", captured_output)
+  expect_equal(length(note_lines), 2)
+
+  # Should see an error message about receiver failure
+  error_lines <- grep("\\[ERROR\\].*Receiver #2 failed", captured_output)
+  expect_equal(length(error_lines), 1)
+
+  # Error message should include receiver provenance
+  expect_true(any(grepl("Receiver: failing_receiver\\(\\)", captured_output)))
+})
+
+test_that("receiver labels are captured correctly", {
+  log_test <- logger() %>%
+    with_receivers(to_console(), to_identity())
+
+  config <- attr(log_test, "config")
+
+  # Should have captured receiver labels
+  expect_equal(length(config$receiver_labels), 2)
+  expect_equal(config$receiver_labels[[1]], "to_console()")
+  expect_equal(config$receiver_labels[[2]], "to_identity()")
+})

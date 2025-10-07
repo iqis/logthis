@@ -16,18 +16,14 @@ print.logger <- function(x, ...) {
     cat("Receivers: (none)\n")
   } else {
     cat("Receivers:\n")
-    
-    if (!is.null(config$receiver_calls)) {
-      # Print the captured calls
-      for (i in seq_along(config$receiver_calls)) {
-        call_text <- deparse(config$receiver_calls[[i]], width.cutoff = 60L)
-        if (length(call_text) > 1) {
-          call_text <- paste(call_text[1], "...")
-        }
-        cat("  [", i, "] ", call_text, "\n", sep = "")
+
+    if (!is.null(config$receiver_labels)) {
+      # Print the captured labels
+      for (i in seq_along(config$receiver_labels)) {
+        cat("  [", i, "] ", config$receiver_labels[[i]], "\n", sep = "")
       }
     } else {
-      # Fallback: show receiver classes if calls aren't available
+      # Fallback: show receiver classes if labels aren't available
       receiver_classes <- sapply(config$receivers, function(r) class(r)[1])
       for (i in seq_along(receiver_classes)) {
         cat("  [", i, "] ", receiver_classes[i], "\n", sep = "")

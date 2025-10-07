@@ -52,9 +52,36 @@ logger <- function(){
         event$tags <- c(event$tags, config$tags)
       }
 
-      # Event passes logger filter, send to receivers
-      config$receivers %>%
-        purrr::walk(purrr::exec, event = event)
+      # Event passes logger filter, send to receivers with error handling
+      purrr::imap(config$receivers, function(receiver, idx) {
+        result <- purrr::safely(purrr::exec)(receiver, event = event)
+        if (!is.null(result$error)) {
+          # Get receiver label for error reporting
+          receiver_label <- if (idx <= length(config$receiver_labels)) {
+            config$receiver_labels[[idx]]
+          } else {
+            class(receiver)[1]
+          }
+
+          # Create error event and send to console fallback
+          error_event <- ERROR(sprintf("Receiver #%d failed: %s\nReceiver: %s",
+                                       idx,
+                                       conditionMessage(result$error),
+                                       receiver_label))
+          error_event$tags <- c(error_event$tags, "receiver_error")
+
+          # Use to_console() as fallback to report the receiver failure
+          tryCatch(
+            to_console()(error_event),
+            error = function(e) {
+              # Only if to_console() itself fails, use warning
+              warning("Logger receiver error AND console fallback failed: ",
+                      conditionMessage(e), call. = FALSE)
+            }
+          )
+        }
+        invisible(NULL)
+      })
 
       # Return the event to enable chaining
       invisible(event)
@@ -65,7 +92,7 @@ logger <- function(){
   config = list(limits = list(lower = 0,
                               upper = 120),
                 receivers = list(),
-                receiver_calls = list(),
+                receiver_labels = list(),
                 tags = NULL))
 }
 
@@ -80,7 +107,7 @@ void_logger <- function(){
   config = list(limits = list(lower = 0,
                               upper = 120),
                 receivers = list(),
-                receiver_calls = list(),
+                receiver_labels = list(),
                 tags = NULL))
 }
 
@@ -138,18 +165,21 @@ with_receivers <- function(logger, ..., append = TRUE){
                stop("Argument `...` (receivers) must be of type 'log_receiver'")
              }})
 
+  # Convert receiver calls to plain text labels for error reporting
+  receiver_labels <- purrr::map_chr(as.list(receiver_calls), ~deparse(., width.cutoff = 500))
+
   config <- attr(logger, "config")
   if (append) {
     config$receivers <- c(config$receivers, receivers)
-    # Also store the receiver calls for printing
-    if (is.null(config$receiver_calls)) {
-      config$receiver_calls <- receiver_calls
+    # Store receiver labels as plain text for error reporting
+    if (is.null(config$receiver_labels)) {
+      config$receiver_labels <- receiver_labels
     } else {
-      config$receiver_calls <- c(config$receiver_calls, receiver_calls)
+      config$receiver_labels <- c(config$receiver_labels, receiver_labels)
     }
   } else {
     config$receivers <- receivers
-    config$receiver_calls <- receiver_calls
+    config$receiver_labels <- receiver_labels
   }
   attr(logger, "config") <- config
 

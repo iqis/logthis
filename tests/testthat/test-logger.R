@@ -22,7 +22,7 @@ test_that("logger()'s config attribute exists and has correct elements", {
 
     expect_true(is.list(config))
     expect_setequal(names(config),
-                    c("limits", "receivers", "receiver_calls", "tags"))
+                    c("limits", "receivers", "receiver_labels", "tags"))
 })
 
 test_that("logger print method shows configuration", {
