@@ -103,10 +103,13 @@ Receivers determine where log events are sent. Multiple receivers can be attache
 # Console output with color coding (filtering is optional)
 to_console(lower = LOWEST, upper = HIGHEST)
 
-# Shiny alerts (for Shiny applications)  
+# File output - writes logs to text files
+to_text_file(path = "app.log", lower = LOWEST, upper = HIGHEST)
+
+# Shiny alerts (for Shiny applications)
 to_shinyalert(lower = WARNING, upper = HIGHEST)
 
-# Notifications
+# Shiny notifications
 to_notif(lower = NOTE, upper = WARNING)
 
 # Testing receivers

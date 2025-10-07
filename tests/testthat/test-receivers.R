@@ -175,3 +175,59 @@ test_that("receiver labels are captured correctly", {
   expect_equal(config$receiver_labels[[1]], "to_console()")
   expect_equal(config$receiver_labels[[2]], "to_identity()")
 })
+
+test_that("to_text_file() supports file rotation by size", {
+  temp_dir <- tempdir()
+  log_path <- file.path(temp_dir, "rotate_test.log")
+
+  # Clean up any existing files
+  unlink(paste0(log_path, "*"))
+
+  # Create receiver with 200 byte max size (small for testing)
+  file_recv <- to_text_file(path = log_path, append = TRUE, max_size = 200, max_files = 3)
+  log_test <- logger() %>% with_receivers(file_recv)
+
+  # Write enough messages to trigger rotation
+  for (i in 1:10) {
+    log_test(NOTE(paste("Log message number", i, "with some extra text to fill space")))
+  }
+
+  # Should have created rotated files
+  expect_true(file.exists(log_path))
+  expect_true(file.exists(paste0(log_path, ".1")))
+
+  # Should not have more than max_files
+  expect_false(file.exists(paste0(log_path, ".4")))
+
+  # Clean up
+  unlink(paste0(log_path, "*"))
+})
+
+test_that("to_text_file() rotation preserves correct order", {
+  temp_dir <- tempdir()
+  log_path <- file.path(temp_dir, "order_test.log")
+
+  # Clean up
+  unlink(paste0(log_path, "*"))
+
+  # Create small file and force rotation
+  file_recv <- to_text_file(path = log_path, append = TRUE, max_size = 100, max_files = 3)
+  log_test <- logger() %>% with_receivers(file_recv)
+
+  # First batch of messages
+  log_test(NOTE("First message"))
+  log_test(NOTE("Second message with enough text to trigger rotation soon"))
+  log_test(NOTE("Third message with enough text to trigger rotation soon"))
+
+  # Check that oldest logs are in .1, newer in main file
+  main_content <- readLines(log_path)
+  expect_true(any(grepl("Third message", main_content)))
+
+  if (file.exists(paste0(log_path, ".1"))) {
+    old_content <- readLines(paste0(log_path, ".1"))
+    expect_true(any(grepl("First message|Second message", old_content)))
+  }
+
+  # Clean up
+  unlink(paste0(log_path, "*"))
+})
