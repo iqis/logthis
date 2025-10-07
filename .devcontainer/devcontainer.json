@@ -3,11 +3,12 @@
   "build": {
     "dockerfile": "Dockerfile"
   },
-  "postCreateCommand": "R --version && echo '🔬 logthis Development Environment Ready!'",
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
   "customizations": {
     "vscode": {
       "extensions": [
-        "REditorSupport.r"
+        "REditorSupport.r",
+        "anthropic.claude-code"
       ],
       "settings": {
         "r.bracketedPaste": true,
