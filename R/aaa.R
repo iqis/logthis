@@ -14,15 +14,18 @@ guard_level_type <- function(level){
 
 # Package-level constant for log level to color mapping
 # Used by to_console() receiver
+# Maps to levels: LOWEST(0), TRACE(10), DEBUG(20), NOTE(30), MESSAGE(40), WARNING(60), ERROR(80), CRITICAL(90), HIGHEST(100)
 .LEVEL_COLOR_MAP <- list(
-  levels = c(0, 20, 40, 60, 80, 100),
+  levels = c(0, 10, 20, 30, 40, 60, 80, 90),
   colors = list(
-    crayon::white,
-    crayon::silver,
-    crayon::green,
-    crayon::yellow,
-    crayon::red,
-    purrr::compose(crayon::red, crayon::bold)
+    crayon::white,                              # LOWEST (boundary)
+    crayon::silver,                             # TRACE
+    crayon::cyan,                               # DEBUG
+    crayon::green,                              # NOTE
+    crayon::yellow,                             # MESSAGE
+    crayon::red,                                # WARNING
+    purrr::compose(crayon::red, crayon::bold),  # ERROR
+    purrr::compose(crayon::red, crayon::bold)   # CRITICAL + HIGHEST
   )
 )
 

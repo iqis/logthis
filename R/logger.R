@@ -90,7 +90,7 @@ logger <- function(){
   class = c("logger",
             "function"),
   config = list(limits = list(lower = 0,
-                              upper = 120),
+                              upper = 100),
                 receivers = list(),
                 receiver_labels = list(),
                 tags = NULL))
@@ -105,7 +105,7 @@ void_logger <- function(){
   class = c("logger",
             "function"),
   config = list(limits = list(lower = 0,
-                              upper = 120),
+                              upper = 100),
                 receivers = list(),
                 receiver_labels = list(),
                 tags = NULL))
@@ -248,15 +248,15 @@ with_limits.logger <- function(x, lower = LOWEST, upper = HIGHEST, ...){
 
   # guard limit values & apply to config if not null
   if (!is.null(lower)) {
-    if (lower < 0 | lower > 119) {
-      stop(glue::glue("Lower limit must be in [0, 119], got {lower}"))
+    if (lower < 0 | lower > 99) {
+      stop(glue::glue("Lower limit must be in [0, 99], got {lower}"))
     }
     config$limits$lower <- lower
   }
 
   if (!is.null(upper)) {
-    if (upper < 1 | upper > 120) {
-      stop(glue::glue("Upper limit must be in [1, 120], got {upper}"))
+    if (upper < 1 | upper > 100) {
+      stop(glue::glue("Upper limit must be in [1, 100], got {upper}"))
     }
     config$limits$upper <- upper
   }
@@ -317,12 +317,12 @@ with_limits.log_receiver <- function(x, lower = LOWEST, upper = HIGHEST, ...){
   upper_num <- make_level_number(upper)
 
   # Validate limit ranges
-  if (lower_num < 0 | lower_num > 119) {
-    stop(glue::glue("Lower limit must be in [0, 119], got {lower_num}"))
+  if (lower_num < 0 | lower_num > 99) {
+    stop(glue::glue("Lower limit must be in [0, 99], got {lower_num}"))
   }
 
-  if (upper_num < 1 | upper_num > 120) {
-    stop(glue::glue("Upper limit must be in [1, 120], got {upper_num}"))
+  if (upper_num < 1 | upper_num > 100) {
+    stop(glue::glue("Upper limit must be in [1, 100], got {upper_num}"))
   }
 
   # Create a wrapper receiver that checks new limits before calling original

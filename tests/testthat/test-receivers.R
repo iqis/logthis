@@ -43,8 +43,8 @@ test_that("with_limits.log_receiver() creates wrapper with new limits", {
   expect_s3_class(limited_recv, "function")
 
   # Check that limits are stored as attributes (as numeric values)
-  expect_equal(as.numeric(attr(limited_recv, "lower")), 80)
-  expect_equal(as.numeric(attr(limited_recv, "upper")), 100)
+  expect_equal(as.numeric(attr(limited_recv, "lower")), 60)
+  expect_equal(as.numeric(attr(limited_recv, "upper")), 80)
 })
 
 test_that("with_limits.log_receiver() filters events correctly", {
@@ -73,12 +73,12 @@ test_that("with_limits.log_receiver() validates limit ranges", {
   recv <- to_identity()
 
   # Lower limit out of range
-  expect_error(recv %>% with_limits(lower = -1), "Lower limit must be in \\[0, 119\\]")
-  expect_error(recv %>% with_limits(lower = 120), "Lower limit must be in \\[0, 119\\]")
+  expect_error(recv %>% with_limits(lower = -1), "Lower limit must be in \\[0, 99\\]")
+  expect_error(recv %>% with_limits(lower = 100), "Lower limit must be in \\[0, 99\\]")
 
   # Upper limit out of range
-  expect_error(recv %>% with_limits(upper = 0), "Upper limit must be in \\[1, 120\\]")
-  expect_error(recv %>% with_limits(upper = 121), "Upper limit must be in \\[1, 120\\]")
+  expect_error(recv %>% with_limits(upper = 0), "Upper limit must be in \\[1, 100\\]")
+  expect_error(recv %>% with_limits(upper = 101), "Upper limit must be in \\[1, 100\\]")
 })
 
 test_that("to_text_file() with rotation creates rotated files", {
@@ -253,7 +253,7 @@ test_that("to_json_file() creates valid JSONL output", {
   # Parse first line
   event1 <- jsonlite::fromJSON(lines[1])
   expect_equal(event1$level, "NOTE")
-  expect_equal(event1$level_number, 40)
+  expect_equal(event1$level_number, 30)
   expect_equal(event1$message, "First message")
   expect_true("time" %in% names(event1))
 

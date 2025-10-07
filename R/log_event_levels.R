@@ -56,8 +56,8 @@ make_level_number <- function(x, validate = FALSE) {
   }
   
   if (validate) {
-    if (res < 0 | res > 120) {
-      stop("Level number must be within [0, 120].")
+    if (res < 0 | res > 100) {
+      stop("Level number must be within [0, 100].")
     }
 
     original_res <- res
@@ -79,24 +79,32 @@ LOWEST <- log_event_level("LOWEST", 0)
 
 #' @export
 #' @rdname log_event_level
-CHATTER <- log_event_level("CHATTER", 20)
+TRACE <- log_event_level("TRACE", 10)
 
 #' @export
 #' @rdname log_event_level
-NOTE <- log_event_level("NOTE", 40)
+DEBUG <- log_event_level("DEBUG", 20)
 
 #' @export
 #' @rdname log_event_level
-MESSAGE <- log_event_level("MESSAGE", 60)
+NOTE <- log_event_level("NOTE", 30)
 
 #' @export
 #' @rdname log_event_level
-WARNING <- log_event_level("WARNING", 80)
+MESSAGE <- log_event_level("MESSAGE", 40)
 
 #' @export
 #' @rdname log_event_level
-ERROR <- log_event_level("ERROR", 100)
+WARNING <- log_event_level("WARNING", 60)
 
 #' @export
 #' @rdname log_event_level
-HIGHEST <- log_event_level("HIGHEST", 120)
+ERROR <- log_event_level("ERROR", 80)
+
+#' @export
+#' @rdname log_event_level
+CRITICAL <- log_event_level("CRITICAL", 90)
+
+#' @export
+#' @rdname log_event_level
+HIGHEST <- log_event_level("HIGHEST", 100)

@@ -13,7 +13,7 @@
 
 ## Features
 
-- 🎯 **Hierarchical Event Levels** - Categorize messages by importance (0-120 scale)
+- 🎯 **Hierarchical Event Levels** - Categorize messages by importance (0-100 scale)
 - 🎨 **Multiple Output Receivers** - Send logs to console, files, Shiny alerts, and more
 - ⚙️ **Configurable Filtering** - Set min/max level limits to control output
 - 🔧 **Composable Design** - Use functional programming patterns with pipes
@@ -58,11 +58,11 @@ log_this(ERROR("Something went wrong!"))
 # Inspect logger configuration
 print(log_this)
 # <logger>
-# Level limits: 40 to 100  
+# Level limits: 30 to 80
 # Receivers:
 #   [1] to_console()
 #
-# This logger processes events from NOTE (40) to ERROR (100) inclusive
+# This logger processes events from NOTE (30) to ERROR (80) inclusive
 ```
 
 **Note:** The package also exports a void logger called `log_this()` that discards all events - perfect for testing or when you want to disable logging without changing your code.
@@ -71,17 +71,21 @@ print(log_this)
 
 `logthis` uses a hierarchical system with predefined levels:
 
-| Level    | Number | Purpose                    | Color* |
-|----------|--------|----------------------------|--------|
-| LOWEST   | 0      | Lowest priority debugging  | White  |
-| CHATTER  | 20     | Verbose debugging output   | Silver |
-| NOTE     | 40     | General notes/info         | Green  |
-| MESSAGE  | 60     | Important messages         | Yellow |
-| WARNING  | 80     | Warning conditions         | Red    |
-| ERROR    | 100    | Error conditions           | Bold Red |
-| HIGHEST  | 120    | Critical events            | Bold Red |
+| Level    | Number | Purpose                           | Color*     |
+|----------|--------|-----------------------------------|------------|
+| LOWEST   | 0      | Virtual boundary (filtering only) | White      |
+| TRACE    | 10     | Very detailed diagnostic output   | Silver     |
+| DEBUG    | 20     | Debugging information             | Cyan       |
+| NOTE     | 30     | General notes/observations        | Green      |
+| MESSAGE  | 40     | Important messages                | Yellow     |
+| WARNING  | 60     | Warning conditions                | Red        |
+| ERROR    | 80     | Error conditions                  | Bold Red   |
+| CRITICAL | 90     | Severe failures needing attention | Bold Red   |
+| HIGHEST  | 100    | Virtual boundary (filtering only) | Bold Red   |
 
 *Colors are applied by the default `to_console()` receiver. Other receivers may use different formatting.
+
+**Note:** LOWEST and HIGHEST are virtual boundary levels for filtering - use TRACE through CRITICAL for actual logging.
 
 ## Creating Custom Levels
 
@@ -166,7 +170,7 @@ to_database <- function(connection) {
 to_slack <- function(webhook_url, channel = "#alerts") {
   receiver(function(event) {
     # Only send ERROR and above to Slack
-    if (event$level_number >= 100) {
+    if (event$level_number >= 80) {
       payload <- list(
         text = paste("🚨", event$level_class, ":", event$message),
         channel = channel
@@ -192,16 +196,16 @@ to_slack <- function(webhook_url, channel = "#alerts") {
 # Send logs to both console and Shiny alerts
 log_this <- logger() %>%
     with_receivers(
-        to_console(lower = CHATTER),
+        to_console(lower = TRACE),
         to_shinyalert(lower = ERROR)
     )
 
 # Check configuration
 print(log_this)
 # <logger>
-# Level limits: 0 to 120
+# Level limits: 0 to 100
 # Receivers:
-#   [1] to_console(lower = CHATTER)
+#   [1] to_console(lower = TRACE)
 #   [2] to_shinyalert(lower = ERROR)
 ```
 
@@ -217,19 +221,19 @@ print(log_this)
 **All level limits are inclusive**: events with `level_number >= lower AND <= upper` will be processed.
 
 ```r
-# Logger-level: Only WARNING and above reach receivers (80 <= level <= 120)
-# Receiver-level: Console shows NOTE and above (40 <= level <= 120), file shows ERROR only (100 <= level <= 120)
+# Logger-level: Only WARNING and above reach receivers (60 <= level <= 100)
+# Receiver-level: Console shows NOTE and above (30 <= level <= 100), file shows ERROR only (80 <= level <= 100)
 log_this <- logger() %>%
     with_receivers(
         to_console(lower = NOTE),        # Receiver filter: NOTE to HIGHEST (inclusive)
-        to_text_file(lower = ERROR)      # Receiver filter: ERROR to HIGHEST (inclusive)  
+        to_text_file(lower = ERROR)      # Receiver filter: ERROR to HIGHEST (inclusive)
     ) %>%
     with_limits(lower = WARNING, upper = HIGHEST)  # Logger filter: WARNING to HIGHEST (inclusive)
 
 # Result: Console gets WARNING+, File gets ERROR+ (logger filter blocks NOTE/MESSAGE)
-log_this(NOTE("This won't reach any receiver"))        # Blocked by logger (40 < 80)
-log_this(WARNING("This goes to console only"))         # Passes logger (80 >= 80), blocked by file receiver (80 < 100)
-log_this(ERROR("This goes to both console and file"))  # Passes both filters (100 >= 80 AND 100 >= 100)
+log_this(NOTE("This won't reach any receiver"))        # Blocked by logger (30 < 60)
+log_this(WARNING("This goes to console only"))         # Passes logger (60 >= 60), blocked by file receiver (60 < 80)
+log_this(ERROR("This goes to both console and file"))  # Passes both filters (80 >= 60 AND 80 >= 80)
 ```
 
 ### Setting Logger-Level Limits
@@ -245,7 +249,7 @@ log_this <- logger() %>%
 
 ```r
 # Each receiver can have its own filtering independent of logger limits
-console_receiver <- to_console(lower = CHATTER, upper = WARNING)
+console_receiver <- to_console(lower = TRACE, upper = WARNING)
 file_receiver <- to_text_file(lower = ERROR, upper = HIGHEST)
 
 log_this <- logger() %>%
@@ -335,7 +339,7 @@ create_logger <- function(env = "development") {
             with_limits(lower = WARNING, upper = HIGHEST)
     } else if (env == "development") {
         log_this <- log_this %>%
-            with_limits(lower = CHATTER, upper = HIGHEST)
+            with_limits(lower = TRACE, upper = HIGHEST)
     }
     
     return(log_this)
@@ -350,20 +354,41 @@ Each log event contains rich metadata:
 
 ```r
 # Create a custom event with additional data
-my_event <- WARNING("Database connection failed", 
+my_event <- WARNING("Database connection failed",
                    retry_count = 3,
                    database = "prod_db")
 
 log_this(my_event)
 ```
 
-Event structure:
-- `message` - The log message
+### Standard Event Fields
+
+Every log event has these fields:
 - `time` - Timestamp when event was created
 - `level_class` - Event level name (e.g., "WARNING")
-- `level_number` - Numeric level (e.g., 80)
-- `tags` - Array of tags for categorization
-- `...` - Any additional custom fields
+- `level_number` - Numeric level (e.g., 60)
+- `message` - The log message text
+- `tags` - Array of tags for categorization (optional)
+- Custom fields - Any additional named arguments
+
+### Using Fields in Templates
+
+When formatting logs (e.g., with `to_text()`), all fields are available as template variables:
+
+```r
+# Default text format
+to_text() %>% on_local(path = "app.log")
+# Output: "2025-10-07 14:30:15 [WARNING:60] Database connection failed"
+
+# Custom template with tags and custom fields
+to_text(template = "{time} [{level}:{level_number}] {tags} {message} | retries={retry_count}") %>%
+  on_local(path = "app.log")
+# Output: "2025-10-07 14:30:15 [WARNING:60] [] Database connection failed | retries=3"
+
+# JSON format includes all fields automatically
+to_json() %>% on_local(path = "app.jsonl")
+# Output: {"time":"...","level":"WARNING","level_number":60,"message":"...","retry_count":3,"database":"prod_db"}
+```
 
 ## Working with Tags
 

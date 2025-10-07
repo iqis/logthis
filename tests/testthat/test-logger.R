@@ -152,7 +152,7 @@ test_that("with_receivers() overwrites logger's receivers when `append` = FALSE"
 test_that("with_limits() can guard logger, lower and upper types & values",{
 
     logger() %>%
-        with_limits(0, 120)
+        with_limits(0, 100)
 
     logger() %>%
         with_limits(LOWEST,
@@ -232,18 +232,18 @@ test_that("scope-based logger enhancement works", {
 
 test_that("two-level filtering works correctly", {
     # Create a logger with both logger-level and receiver-level filtering
-    # Logger allows NOTE+ (40+), console receiver further filters to WARNING+ (80+)
+    # Logger allows NOTE+ (30+), console receiver further filters to WARNING+ (60+)
     filtered_logger <- logger() %>%
         with_receivers(to_console(lower = WARNING)) %>%
         with_limits(lower = NOTE, upper = HIGHEST)
-    
+
     # Test event below logger limit should be filtered out entirely
-    low_event <- CHATTER("Below logger limit")  # level 20, below NOTE (40)
+    low_event <- TRACE("Below logger limit")  # level 10, below NOTE (30)
     result1 <- filtered_logger(low_event)
     expect_equal(result1, low_event)
-    
-    # Test event that passes logger but not receiver filter  
-    mid_event <- NOTE("Passes logger, blocked by receiver")  # level 40, below WARNING (80)
+
+    # Test event that passes logger but not receiver filter
+    mid_event <- NOTE("Passes logger, blocked by receiver")  # level 30, below WARNING (60)
     result2 <- filtered_logger(mid_event)
     expect_equal(result2, mid_event)
     

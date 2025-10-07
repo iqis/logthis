@@ -26,7 +26,7 @@ test_that("log_event_level() rounds `level_number`", {
   }, structure(6, class = "level_number"))
 })
 
-test_that("log_event_level() rejects level_number outside of [0, 120].", {
+test_that("log_event_level() rejects level_number outside of [0, 100].", {
   expect_error(log_event_level("TEST", -10))
   expect_error(log_event_level("TEST", 130))
 })
