@@ -266,7 +266,50 @@ with_limits.logger <- function(x, lower = LOWEST, upper = HIGHEST, ...){
   logger
 }
 
+#' Set receiver-level limits
+#'
+#' Creates a wrapper receiver that filters events by level before passing them
+#' to the original receiver. This provides fine-grained control over which events
+#' each receiver processes, independent of logger-level filtering.
+#'
+#' Receiver-level filtering happens AFTER logger-level filtering. Events must
+#' pass both filters to reach the receiver.
+#'
+#' Limits are inclusive: events with level_number >= lower AND <= upper
+#' will be passed to the receiver.
+#'
+#' @param x receiver object to wrap; <log_receiver>
+#' @param lower lower limit (inclusive); <numeric> | <log_event_level>
+#' @param upper upper limit (inclusive); <numeric> | <log_event_level>
+#' @param ... additional arguments (currently unused)
+#'
+#' @return wrapped receiver; <log_receiver>
 #' @export
+#'
+#' @examples
+#' # Console receiver that only shows WARNING and above
+#' warn_console <- to_console() %>%
+#'     with_limits(lower = WARNING, upper = HIGHEST)
+#'
+#' # Multiple receivers with different level filters
+#' log_this <- logger() %>%
+#'     with_receivers(
+#'         to_console() %>% with_limits(lower = WARNING),      # Console: warnings+
+#'         to_text_file("debug.log") %>% with_limits(lower = CHATTER)  # File: everything
+#'     )
+#'
+#' # Two-level filtering example:
+#' log_this <- logger() %>%
+#'     with_limits(lower = NOTE, upper = HIGHEST) %>%           # Logger: NOTE+
+#'     with_receivers(
+#'         to_console() %>% with_limits(lower = WARNING),       # Console: WARNING+
+#'         to_text_file("all.log")                               # File: NOTE+ (from logger)
+#'     )
+#'
+#' log_this(CHATTER("Blocked by logger"))     # Below logger limit
+#' log_this(NOTE("Only in file"))             # Passes logger, blocked by console receiver
+#' log_this(WARNING("Both outputs"))          # Passes both filters
+#'
 with_limits.log_receiver <- function(x, lower = LOWEST, upper = HIGHEST, ...){
   original_receiver <- x
 
