@@ -17,7 +17,6 @@ License: MIT + file LICENSE
 URL: https://github.com/iqis/logthis, https://iqis.github.io/logthis/
 BugReports: https://github.com/iqis/logthis/issues
 Encoding: UTF-8
-LazyData: true
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 Suggests: 
@@ -27,10 +26,9 @@ Suggests:
     rmarkdown,
     shinyalert,
     shiny
-Imports: 
+Imports:
     magrittr,
     purrr,
     crayon,
-    tibble,
     glue
 VignetteBuilder: knitr

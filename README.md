@@ -21,6 +21,7 @@
 - 📋 **Scope-Based Enhancement** - Add receivers within specific scopes without affecting parent loggers
 - 🌈 **Color-Coded Console Output** - Visual distinction for different log levels
 - 📝 **Structured Events** - Rich metadata with timestamps, tags, and custom fields
+- 🏷️ **Flexible Tagging System** - Track provenance, context, and categorization with hierarchical tags
 - 🔗 **Shiny Integration** - Built-in support for Shiny applications
 
 ## Installation
@@ -264,9 +265,9 @@ log_this <- log_this %>%
 ### Chaining Multiple Loggers
 
 ```r
-# Create specialized loggers for specific use cases  
+# Create specialized loggers for specific use cases
 log_this_console <- logger() %>% with_receivers(to_console())
-log_this_file <- logger() %>% with_receivers(to_identity())  # placeholder for file logger
+log_this_file <- logger() %>% with_receivers(to_text_file(path = "app.log"))
 log_this_alerts <- logger() %>% with_receivers(to_shinyalert(lower = ERROR))
 
 # Chain them together - event flows through all loggers
@@ -294,8 +295,8 @@ log_this <- logger() %>% with_receivers(to_console())
 
 process_sensitive_data <- function() {
     # Add audit logging in this scope only
-    log_this <- log_this %>% 
-        with_receivers(to_identity())  # represents audit logger
+    log_this <- log_this %>%
+        with_receivers(to_text_file(path = "audit.log"))
     
     log_this(NOTE("Processing sensitive data"))
     log_this(MESSAGE("Data validation complete"))
@@ -324,7 +325,7 @@ create_logger <- function(env = "development") {
     
     if (env == "production") {
         log_this <- log_this %>%
-            with_receivers(to_identity()) %>%  # file logging
+            with_receivers(to_text_file(path = "production.log")) %>%
             with_limits(lower = WARNING, upper = HIGHEST)
     } else if (env == "development") {
         log_this <- log_this %>%
@@ -357,6 +358,93 @@ Event structure:
 - `level_number` - Numeric level (e.g., 80)
 - `tags` - Array of tags for categorization
 - `...` - Any additional custom fields
+
+## Working with Tags
+
+Tags provide a flexible categorization system for log events. They can be applied at three levels, and tags from all levels are combined when logging.
+
+### Tagging Individual Events
+
+```r
+# Add tags to specific events
+event <- NOTE("User logged in") %>%
+    with_tags("authentication", "security")
+
+log_this(event)
+```
+
+### Auto-Tagging by Level
+
+Create custom event levels that automatically tag all events:
+
+```r
+# Create a tagged level for critical errors
+CRITICAL <- ERROR %>% with_tags("critical", "alert", "pagerduty")
+
+# All events from this level automatically have these tags
+log_this(CRITICAL("Database connection lost"))
+log_this(CRITICAL("Payment processing failed"))
+```
+
+### Logger-Level Tagging
+
+Apply tags to all events passing through a logger:
+
+```r
+# Tag all logs from this service
+log_this <- logger() %>%
+    with_receivers(to_console()) %>%
+    with_tags("production", "api-service", "us-east-1")
+
+# All events logged here get these tags
+log_this(NOTE("Service started"))
+log_this(ERROR("Request timeout"))
+```
+
+### Tag Hierarchy
+
+Tags from all three levels are combined:
+
+```r
+# 1. Create tagged level
+AUTH_ERROR <- ERROR %>% with_tags("authentication")
+
+# 2. Create tagged logger
+log_api <- logger() %>%
+    with_receivers(to_console()) %>%
+    with_tags("api", "production")
+
+# 3. Create event with its own tags
+event <- AUTH_ERROR("Invalid credentials") %>%
+    with_tags("user:12345")
+
+# Event will have all tags: "authentication", "api", "production", "user:12345"
+log_api(event)
+```
+
+### Practical Tag Patterns
+
+```r
+# Environment tagging
+log_this <- logger() %>%
+    with_receivers(to_console()) %>%
+    with_tags(Sys.getenv("ENVIRONMENT", "dev"))
+
+# Component tagging for microservices
+log_database <- logger() %>%
+    with_receivers(to_text_file(path = "db.log")) %>%
+    with_tags("database", "postgres")
+
+log_cache <- logger() %>%
+    with_receivers(to_text_file(path = "cache.log")) %>%
+    with_tags("cache", "redis")
+
+# Request-specific tagging
+process_request <- function(request_id) {
+    log_this(NOTE("Processing request") %>%
+        with_tags(paste0("request:", request_id)))
+}
+```
 
 ## Use Cases
 
@@ -633,10 +721,16 @@ covr::package_coverage()
 ## Dependencies
 
 - `magrittr` - Pipe operators
-- `purrr` - Functional programming utilities  
+- `purrr` - Functional programming utilities
 - `crayon` - Console text coloring
-- `tibble` - Modern data frames
 - `glue` - String interpolation
+
+## Learn More
+
+For detailed guides and advanced techniques:
+
+- **[Getting Started](vignettes/getting-started.Rmd)** - Basic setup and usage patterns
+- **[Tagging and Provenance](vignettes/tagging-and-provenance.Rmd)** - Track data lineage, execution context, and build audit trails with hierarchical tags
 
 ## Contributing
 

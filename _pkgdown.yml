@@ -25,6 +25,8 @@ navbar:
       menu:
       - text: Getting Started
         href: articles/getting-started.html
+      - text: Tagging and Provenance
+        href: articles/tagging-and-provenance.html
       - text: Advanced Usage
         href: articles/advanced-usage.html
     news:
@@ -40,7 +42,7 @@ reference:
   desc: Essential functions for creating and configuring loggers
   contents:
   - logger
-  - dummy_logger
+  - void_logger
   - with_receivers
   - with_limits
 
@@ -75,7 +77,12 @@ articles:
   navbar: ~
   contents:
   - getting-started
-  
+
+- title: Tagging and Provenance
+  navbar: ~
+  contents:
+  - tagging-and-provenance
+
 - title: Advanced Usage
   navbar: ~
   contents:

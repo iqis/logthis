@@ -31,6 +31,107 @@ test_that("to_console()() rejects wrong types given to `event`", {
   expect_error(to_console()(123))
 })
 
+test_that("with_limits.log_receiver() creates wrapper with new limits", {
+  # Create a receiver with initial limits
+  recv <- to_identity()
+
+  # Apply new limits via with_limits
+  limited_recv <- recv %>% with_limits(lower = WARNING, upper = ERROR)
+
+  # Should still be a log_receiver
+  expect_s3_class(limited_recv, "log_receiver")
+  expect_s3_class(limited_recv, "function")
+
+  # Check that limits are stored as attributes (as numeric values)
+  expect_equal(as.numeric(attr(limited_recv, "lower")), 80)
+  expect_equal(as.numeric(attr(limited_recv, "upper")), 100)
+})
+
+test_that("with_limits.log_receiver() filters events correctly", {
+  # Create a capturing receiver
+  captured <- NULL
+  capture_recv <- receiver(function(event) {
+    captured <<- event
+    invisible(NULL)
+  })
+
+  # Apply limits to only accept WARNING and above
+  limited_recv <- capture_recv %>% with_limits(lower = WARNING, upper = HIGHEST)
+
+  # Event below limit should not be captured
+  captured <- NULL
+  limited_recv(NOTE("Should be filtered"))
+  expect_null(captured)
+
+  # Event within limits should be captured
+  warn_event <- WARNING("Should pass")
+  limited_recv(warn_event)
+  expect_equal(captured$message, "Should pass")
+})
+
+test_that("with_limits.log_receiver() validates limit ranges", {
+  recv <- to_identity()
+
+  # Lower limit out of range
+  expect_error(recv %>% with_limits(lower = -1), "Lower limit must be in \\[0, 119\\]")
+  expect_error(recv %>% with_limits(lower = 120), "Lower limit must be in \\[0, 119\\]")
+
+  # Upper limit out of range
+  expect_error(recv %>% with_limits(upper = 0), "Upper limit must be in \\[1, 120\\]")
+  expect_error(recv %>% with_limits(upper = 121), "Upper limit must be in \\[1, 120\\]")
+})
+
+test_that("to_text_file() with rotation creates rotated files", {
+  # Create a temporary directory for testing
+  temp_dir <- tempdir()
+  log_path <- file.path(temp_dir, "test_rotation.log")
+
+  # Clean up any existing test files
+  unlink(paste0(log_path, "*"))
+
+  # Create a file receiver with small max_size for testing (100 bytes)
+  file_recv <- to_text_file(path = log_path, max_size = 100, max_files = 3)
+
+  # Write enough events to trigger rotation
+  for (i in 1:10) {
+    file_recv(NOTE(paste("Test message number", i, "with some extra text to increase size")))
+  }
+
+  # Check that rotated files exist
+  expect_true(file.exists(log_path))
+
+  # At least one rotation should have occurred
+  rotated_files <- list.files(temp_dir, pattern = basename(paste0(log_path, "\\.[0-9]+")), full.names = TRUE)
+  expect_true(length(rotated_files) > 0)
+
+  # Clean up
+  unlink(log_path)
+  unlink(rotated_files)
+})
+
+test_that("to_text_file() without rotation does not create rotated files", {
+  temp_dir <- tempdir()
+  log_path <- file.path(temp_dir, "test_no_rotation.log")
+
+  # Clean up any existing test files
+  unlink(paste0(log_path, "*"))
+
+  # Create a file receiver without rotation
+  file_recv <- to_text_file(path = log_path)
+
+  # Write some events
+  for (i in 1:5) {
+    file_recv(NOTE(paste("Test message", i)))
+  }
+
+  # Check that no rotated files exist
+  rotated_files <- list.files(temp_dir, pattern = basename(paste0(log_path, "\\.[0-9]+")), full.names = TRUE)
+  expect_equal(length(rotated_files), 0)
+
+  # Clean up
+  unlink(log_path)
+})
+
 # # verify output
 # test_that("...", {
 #   expect_output(to_console()(test_event()),

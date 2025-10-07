@@ -5,6 +5,9 @@
 ^\.git$
 ^\.github$
 ^\.gitignore$
+^\.\.Rcheck$
+^.*\.Rcheck$
+^vignettes/.*\.Rmd\.disabled$
 ^logthis\.Rproj$
 ^\.Rproj\.user$
 ^README\.Rmd$
@@ -16,3 +19,8 @@
 ^scripts$
 ^CODE_OF_CONDUCT\.md$
 ^CONTRIBUTING\.md$
+^\.claude$
+^IMPROVEMENT_PLAN\.md$
+^check-renv\.R$
+^doc$
+^Meta$

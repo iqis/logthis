@@ -117,29 +117,13 @@ to_console <- function(lower = LOWEST,
       if (attr(lower, "level_number") <= event$level_number &&
           event$level_number <= attr(upper, "level_number")) {
 
-        log_color <- function(level_number){
-          level_color_lookup <-
-            tibble::tibble(level_number = seq(0, 100, 20),
-                           crayon_f = list(crayon::white,
-                                           crayon::silver,
-                                           crayon::green,
-                                           crayon::yellow,
-                                           crayon::red,
-                                           purrr::compose(crayon::red, crayon::bold)))
-          for (i in 1:nrow(level_color_lookup)) {
-            if (level_color_lookup$level_number[i] >= level_number) {
-              res <- level_color_lookup$crayon_f[[i]]
-              break
-            }
-          }
-          res
-        }
+        color_fn <- get_log_color(event$level_number)
 
         with(event,
-             cat(log_color(level_number)(paste0(time, " ",
-                                                "[", level_class, "]", " ",
-                                                message,
-                                                "\n"))))
+             cat(color_fn(paste0(time, " ",
+                                 "[", level_class, "]", " ",
+                                 message,
+                                 "\n"))))
       }
       invisible(NULL)
       })
@@ -234,12 +218,14 @@ to_notif <- function(lower = NOTE, upper = WARNING, ...){
 #'
 #' Writes log events to a text file with timestamp and level information.
 #' Level limits are inclusive: events with level_number >= lower AND <= upper
-#' will be written to the file.
+#' will be written to the file. Supports automatic file rotation based on size.
 #'
 #' @param lower minimum level to log (inclusive, optional); <log_event_level>
 #' @param upper maximum level to log (inclusive, optional); <log_event_level>
 #' @param path file path for log output; <character>
 #' @param append whether to append to existing file; <logical>
+#' @param max_size maximum file size in bytes before rotation (default: NULL, no rotation); <numeric>
+#' @param max_files maximum number of rotated files to keep (default: 5); <integer>
 #' @param ... additional arguments (unused)
 #'
 #' @return log receiver function; <log_receiver>
@@ -248,13 +234,16 @@ to_notif <- function(lower = NOTE, upper = WARNING, ...){
 #' @examples
 #' # Basic file logging
 #' file_recv <- to_text_file(path = "app.log")
-#' 
+#'
 #' # Log only errors and above (inclusive)
 #' error_file <- to_text_file(lower = ERROR, path = "errors.log")
-#' 
+#'
+#' # File logging with rotation (rotate when file exceeds 1MB, keep 10 rotated files)
+#' rotating_file <- to_text_file(path = "app.log", max_size = 1e6, max_files = 10)
+#'
 #' # Custom file receiver using the receiver() constructor
 #' simple_file_logger <- receiver(function(event) {
-#'   cat(paste(event$time, event$level_class, event$message), 
+#'   cat(paste(event$time, event$level_class, event$message),
 #'       file = "simple.log", append = TRUE, sep = "\n")
 #'   invisible(NULL)
 #' })
@@ -262,15 +251,41 @@ to_notif <- function(lower = NOTE, upper = WARNING, ...){
 to_text_file <- function(lower = LOWEST,
                          upper = HIGHEST,
                          path = "log.txt",
-                         append = FALSE, ...){
+                         append = FALSE,
+                         max_size = NULL,
+                         max_files = 5, ...){
   stopifnot(is.character(path),
             is.logical(append))
+
+  if (!is.null(max_size)) {
+    stopifnot(is.numeric(max_size), max_size > 0)
+  }
+
+  if (!is.null(max_files)) {
+    stopifnot(is.numeric(max_files), max_files > 0)
+    max_files <- as.integer(max_files)
+  }
 
   if (!append) {
     unlink(path)
   }
 
-  con <- file(path)
+  # Helper function to rotate log files
+  rotate_file <- function(path, max_files) {
+    # Shift existing rotated files (log.txt.2 -> log.txt.3, etc.)
+    for (i in seq(max_files - 1, 1, -1)) {
+      old_path <- paste0(path, ".", i)
+      new_path <- paste0(path, ".", i + 1)
+      if (file.exists(old_path)) {
+        file.rename(old_path, new_path)
+      }
+    }
+
+    # Move current log file to .1
+    if (file.exists(path)) {
+      file.rename(path, paste0(path, ".1"))
+    }
+  }
 
   receiver(
     function(event){
@@ -279,6 +294,14 @@ to_text_file <- function(lower = LOWEST,
 
       if (attr(lower, "level_number") <= event$level_number &&
           event$level_number <= attr(upper, "level_number")) {
+
+        # Check if rotation is needed
+        if (!is.null(max_size) && file.exists(path)) {
+          file_size <- file.info(path)$size
+          if (!is.na(file_size) && file_size >= max_size) {
+            rotate_file(path, max_files)
+          }
+        }
 
         with(event,
              cat(paste0(time, " ",

@@ -1,14 +1,14 @@
 library(testthat)
 library(purrr)
 
-test_that("logger() & dummy_logger() produces right type.", {
+test_that("logger() & void_logger() produces right type.", {
     log_this <- logger()
     expect_s3_class(log_this,
                     "function")
     expect_s3_class(log_this,
                     "logger")
 
-    log_this <- dummy_logger()
+    log_this <- void_logger()
     expect_s3_class(log_this,
                     "function")
     expect_s3_class(log_this,
@@ -22,7 +22,7 @@ test_that("logger()'s config attribute exists and has correct elements", {
 
     expect_true(is.list(config))
     expect_setequal(names(config),
-                    c("limits", "receivers", "receiver_calls"))
+                    c("limits", "receivers", "receiver_calls", "tags"))
 })
 
 test_that("logger print method shows configuration", {

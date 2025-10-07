@@ -1,0 +1,733 @@
+---
+title: "Tagging and Provenance Tracking"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Tagging and Provenance Tracking}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(logthis)
+```
+
+# Introduction
+
+Tags in `logthis` provide a powerful mechanism for recording **provenance**, **context**, and **metadata** alongside your log events. Unlike simple log messages, tags enable you to:
+
+- **Track data lineage** - Know where data came from and how it was processed
+- **Record execution context** - Capture environment, user, session, and runtime information
+- **Categorize and filter** - Organize logs by component, severity, or custom dimensions
+- **Enable observability** - Build queryable, structured logs for production systems
+
+This vignette demonstrates practical patterns for using tags to build enterprise-grade logging systems.
+
+# The Three-Level Tagging Hierarchy
+
+Tags can be applied at three levels, and all tags are combined when an event is logged:
+
+1. **Event-level tags** - Specific to individual log entries
+2. **Level-level tags** - Automatically applied to all events of a certain level
+3. **Logger-level tags** - Applied to all events through a particular logger
+
+## Basic Tagging Examples
+
+### Event-Level Tagging
+
+Tag individual events with specific context:
+
+```{r event-tags}
+# Tag a specific authentication event
+auth_event <- NOTE("User login successful") %>%
+    with_tags("authentication", "security")
+
+# Create a logger
+log_this <- logger() %>% with_receivers(to_identity())
+
+# Log it
+result <- log_this(auth_event)
+print(result$tags)
+```
+
+### Level-Level Auto-Tagging
+
+Create custom levels that automatically tag all events:
+
+```{r level-tags}
+# Create a critical error level that auto-tags for alerting
+CRITICAL <- ERROR %>% with_tags("critical", "pagerduty", "alert")
+
+# All events from this level automatically carry these tags
+event1 <- CRITICAL("Database connection lost")
+event2 <- CRITICAL("Payment processor unreachable")
+
+print(event1$tags)
+print(event2$tags)
+```
+
+### Logger-Level Tagging
+
+Apply tags to all events passing through a logger:
+
+```{r logger-tags}
+# Create a logger for a specific service
+log_api <- logger() %>%
+    with_receivers(to_identity()) %>%
+    with_tags("api-service", "production", "us-east-1")
+
+# All events get the logger tags
+result1 <- log_api(NOTE("Request received"))
+result2 <- log_api(ERROR("Request timeout"))
+
+print(result1$tags)
+print(result2$tags)
+```
+
+### Combined Tag Hierarchy
+
+When you combine all three levels, tags accumulate:
+
+```{r tag-hierarchy}
+# 1. Create a tagged level
+AUTH_ERROR <- ERROR %>% with_tags("authentication")
+
+# 2. Create a tagged logger
+log_service <- logger() %>%
+    with_receivers(to_identity()) %>%
+    with_tags("user-service", "production")
+
+# 3. Create an event with its own tags
+event <- AUTH_ERROR("Invalid credentials") %>%
+    with_tags("user:alice", "ip:192.168.1.100")
+
+# Log it - all tags are combined
+result <- log_service(event)
+print(result$tags)
+# Output: "authentication" "user-service" "production" "user:alice" "ip:192.168.1.100"
+```
+
+# Provenance Tracking Patterns
+
+## Data Lineage Tracking
+
+Track where data comes from and how it's transformed:
+
+```{r data-lineage}
+# Track data processing pipeline
+process_data <- function(input_file, output_file) {
+    # Logger tagged with pipeline stage
+    log_pipeline <- logger() %>%
+        with_receivers(to_identity()) %>%
+        with_tags("pipeline:etl", "stage:transform")
+
+    # Log with data provenance
+    log_pipeline(NOTE("Starting data processing") %>%
+        with_tags(
+            paste0("source:", input_file),
+            paste0("destination:", output_file),
+            paste0("timestamp:", Sys.time())
+        ))
+
+    # Simulate processing
+    result <- data.frame(
+        records = 1000,
+        valid = 950,
+        errors = 50
+    )
+
+    # Log results with provenance
+    log_pipeline(MESSAGE("Processing complete") %>%
+        with_tags(
+            paste0("records_processed:", result$records),
+            paste0("records_valid:", result$valid),
+            paste0("records_errors:", result$errors),
+            paste0("source:", input_file)
+        ))
+
+    return(result)
+}
+
+# Use it
+result <- process_data("raw_data.csv", "clean_data.csv")
+```
+
+## Function Call Provenance
+
+Track which functions called what:
+
+```{r function-provenance}
+# Helper to create a tagged logger for a function
+function_logger <- function(func_name, parent_func = NULL) {
+    tags <- c(paste0("function:", func_name))
+    if (!is.null(parent_func)) {
+        tags <- c(tags, paste0("caller:", parent_func))
+    }
+
+    logger() %>%
+        with_receivers(to_identity()) %>%
+        with_tags(tags)
+}
+
+# Example functions with provenance
+validate_data <- function(data) {
+    log_this <- function_logger("validate_data", "process_pipeline")
+
+    log_this(NOTE("Validating data") %>%
+        with_tags(paste0("rows:", nrow(data))))
+
+    # Validation logic here
+    TRUE
+}
+
+transform_data <- function(data) {
+    log_this <- function_logger("transform_data", "process_pipeline")
+
+    # Call another function - provenance tracked
+    if (validate_data(data)) {
+        log_this(NOTE("Data validation passed") %>%
+            with_tags("validation:success"))
+    }
+
+    log_this(MESSAGE("Transforming data") %>%
+        with_tags(paste0("rows:", nrow(data))))
+
+    data
+}
+
+# Run the pipeline
+sample_data <- data.frame(x = 1:10, y = letters[1:10])
+result <- transform_data(sample_data)
+```
+
+## Model Training Provenance
+
+Track machine learning experiments:
+
+```{r ml-provenance}
+train_model <- function(model_type, hyperparameters, data_version) {
+    # Create experiment-specific logger
+    log_experiment <- logger() %>%
+        with_receivers(to_identity()) %>%
+        with_tags(
+            "component:ml",
+            paste0("model_type:", model_type),
+            paste0("data_version:", data_version),
+            paste0("experiment_id:", format(Sys.time(), "%Y%m%d_%H%M%S"))
+        )
+
+    # Log hyperparameters as tags
+    hyperparam_tags <- paste0("param:", names(hyperparameters), "=", hyperparameters)
+
+    log_experiment(NOTE("Starting model training") %>%
+        with_tags(hyperparam_tags))
+
+    # Simulate training
+    Sys.sleep(0.1)
+
+    # Log results with full provenance
+    log_experiment(MESSAGE("Training complete") %>%
+        with_tags(
+            "accuracy:0.95",
+            "loss:0.05",
+            paste0("training_time_sec:", 0.1)
+        ))
+}
+
+# Run experiment
+train_model(
+    model_type = "random_forest",
+    hyperparameters = list(n_trees = 100, max_depth = 10),
+    data_version = "v2.3"
+)
+```
+
+# Context Tracking Patterns
+
+## User Context
+
+Track who is performing actions:
+
+```{r user-context}
+# Create session-specific logger
+create_session_logger <- function(user_id, session_id, role) {
+    logger() %>%
+        with_receivers(to_identity()) %>%
+        with_tags(
+            paste0("user:", user_id),
+            paste0("session:", session_id),
+            paste0("role:", role),
+            paste0("session_start:", Sys.time())
+        )
+}
+
+# User-specific logging
+user_action <- function(log_user, action, resource) {
+    log_user(NOTE(paste("User action:", action)) %>%
+        with_tags(
+            paste0("action:", action),
+            paste0("resource:", resource),
+            paste0("timestamp:", Sys.time())
+        ))
+}
+
+# Usage
+log_alice <- create_session_logger("alice", "sess_12345", "admin")
+user_action(log_alice, "delete", "database_backup")
+user_action(log_alice, "create", "new_user")
+```
+
+## Request Context
+
+Track API requests with full context:
+
+```{r request-context}
+# Simulate an API request handler
+handle_api_request <- function(method, endpoint, request_id, user_id) {
+    # Create request-specific logger
+    log_request <- logger() %>%
+        with_receivers(to_identity()) %>%
+        with_tags(
+            "component:api",
+            paste0("request_id:", request_id),
+            paste0("method:", method),
+            paste0("endpoint:", endpoint),
+            paste0("user:", user_id),
+            paste0("request_time:", Sys.time())
+        )
+
+    # Log request start
+    log_request(NOTE("API request started"))
+
+    # Simulate processing
+    Sys.sleep(0.05)
+
+    # Log different outcomes
+    if (runif(1) > 0.1) {
+        # Success
+        log_request(MESSAGE("Request completed") %>%
+            with_tags("status:200", "duration_ms:50"))
+    } else {
+        # Error with context
+        log_request(ERROR("Request failed") %>%
+            with_tags(
+                "status:500",
+                "error:database_timeout",
+                "duration_ms:50"
+            ))
+    }
+}
+
+# Handle multiple requests
+handle_api_request("GET", "/api/users", "req_001", "alice")
+handle_api_request("POST", "/api/orders", "req_002", "bob")
+```
+
+## Environment Context
+
+Tag logs with deployment environment information:
+
+```{r environment-context}
+# Create environment-aware logger factory
+create_env_logger <- function(component) {
+    # Gather environment information
+    env_tags <- c(
+        paste0("environment:", Sys.getenv("ENVIRONMENT", "development")),
+        paste0("hostname:", Sys.getenv("HOSTNAME", "localhost")),
+        paste0("region:", Sys.getenv("AWS_REGION", "local")),
+        paste0("version:", Sys.getenv("APP_VERSION", "dev")),
+        paste0("component:", component)
+    )
+
+    logger() %>%
+        with_receivers(to_identity()) %>%
+        with_tags(env_tags)
+}
+
+# Component-specific loggers
+log_database <- create_env_logger("database")
+log_cache <- create_env_logger("cache")
+
+# All logs carry environment context
+log_database(WARNING("Query slow") %>%
+    with_tags("query_time_ms:1500", "table:users"))
+
+log_cache(ERROR("Cache miss rate high") %>%
+    with_tags("miss_rate:0.45", "cache:redis"))
+```
+
+# Advanced Tagging Patterns
+
+## Hierarchical Component Tagging
+
+Organize logs by system components:
+
+```{r component-hierarchy}
+# Create component hierarchy
+create_component_logger <- function(component, subcomponent = NULL) {
+    tags <- c(paste0("component:", component))
+    if (!is.null(subcomponent)) {
+        tags <- c(tags, paste0("subcomponent:", subcomponent))
+    }
+
+    logger() %>%
+        with_receivers(to_identity()) %>%
+        with_tags(tags)
+}
+
+# System architecture
+log_api <- create_component_logger("api")
+log_api_auth <- create_component_logger("api", "authentication")
+log_api_users <- create_component_logger("api", "users")
+log_database <- create_component_logger("database")
+log_cache <- create_component_logger("cache")
+
+# Each component logs with its context
+log_api_auth(WARNING("Rate limit exceeded"))
+log_database(ERROR("Connection pool exhausted"))
+log_cache(NOTE("Cache warmed"))
+```
+
+## Conditional Tagging
+
+Add tags based on conditions:
+
+```{r conditional-tagging}
+# Smart tagging based on event severity
+log_with_context <- function(log_func, message, error_code = NULL) {
+    event <- log_func(message)
+
+    # Add error code tag if present
+    if (!is.null(error_code)) {
+        event <- event %>% with_tags(paste0("error_code:", error_code))
+    }
+
+    # Add severity indicator
+    if (event$level_number >= 80) {
+        event <- event %>% with_tags("severity:high")
+    } else if (event$level_number >= 40) {
+        event <- event %>% with_tags("severity:normal")
+    } else {
+        event <- event %>% with_tags("severity:low")
+    }
+
+    # Add timestamp tag
+    event <- event %>% with_tags(paste0("logged_at:", Sys.time()))
+
+    event
+}
+
+# Usage
+log_this <- logger() %>% with_receivers(to_identity())
+
+result1 <- log_this(log_with_context(NOTE, "Everything ok"))
+print(result1$tags)
+
+result2 <- log_this(log_with_context(ERROR, "Database error", error_code = "DB001"))
+print(result2$tags)
+```
+
+## Performance Tracking Tags
+
+Use tags to track performance metrics:
+
+```{r performance-tracking}
+# Timed operation with automatic performance tags
+timed_operation <- function(log_func, operation_name, code) {
+    start_time <- Sys.time()
+
+    # Log start
+    log_func(NOTE(paste("Starting:", operation_name)) %>%
+        with_tags(
+            paste0("operation:", operation_name),
+            "phase:start"
+        ))
+
+    # Execute operation
+    result <- tryCatch({
+        code
+    }, error = function(e) {
+        # Log error with timing
+        end_time <- Sys.time()
+        duration <- as.numeric(difftime(end_time, start_time, units = "secs"))
+
+        log_func(ERROR(paste("Failed:", operation_name)) %>%
+            with_tags(
+                paste0("operation:", operation_name),
+                paste0("duration_sec:", round(duration, 3)),
+                paste0("error:", e$message),
+                "phase:error"
+            ))
+
+        NULL
+    })
+
+    # Log completion
+    end_time <- Sys.time()
+    duration <- as.numeric(difftime(end_time, start_time, units = "secs"))
+
+    log_func(MESSAGE(paste("Completed:", operation_name)) %>%
+        with_tags(
+            paste0("operation:", operation_name),
+            paste0("duration_sec:", round(duration, 3)),
+            "phase:complete",
+            "status:success"
+        ))
+
+    result
+}
+
+# Usage
+log_perf <- logger() %>%
+    with_receivers(to_identity()) %>%
+    with_tags("monitoring:performance")
+
+result <- timed_operation(log_perf, "data_processing", {
+    Sys.sleep(0.1)
+    data.frame(x = 1:100)
+})
+```
+
+# Production Use Cases
+
+## Multi-Tenant SaaS Application
+
+Track tenant context across all operations:
+
+```{r multi-tenant}
+# Create tenant-aware logger
+tenant_logger <- function(tenant_id, plan_tier) {
+    logger() %>%
+        with_receivers(to_identity()) %>%
+        with_tags(
+            paste0("tenant:", tenant_id),
+            paste0("plan:", plan_tier),
+            "app:saas"
+        )
+}
+
+# Usage per tenant
+process_tenant_request <- function(tenant_id, plan_tier, request_type) {
+    log_tenant <- tenant_logger(tenant_id, plan_tier)
+
+    # Log with tenant context
+    log_tenant(NOTE("Processing request") %>%
+        with_tags(
+            paste0("request_type:", request_type),
+            paste0("timestamp:", Sys.time())
+        ))
+
+    # Business logic here
+
+    log_tenant(MESSAGE("Request completed") %>%
+        with_tags("status:success"))
+}
+
+# Different tenants
+process_tenant_request("tenant_123", "enterprise", "data_export")
+process_tenant_request("tenant_456", "free", "report_generation")
+```
+
+## Distributed Tracing
+
+Implement distributed tracing with correlation IDs:
+
+```{r distributed-tracing}
+# Generate trace ID
+generate_trace_id <- function() {
+    paste0("trace_", format(Sys.time(), "%Y%m%d%H%M%S"), "_",
+           sample(1000:9999, 1))
+}
+
+# Service A: Initiates the trace
+service_a_handler <- function() {
+    trace_id <- generate_trace_id()
+    span_id <- "span_001"
+
+    log_service_a <- logger() %>%
+        with_receivers(to_identity()) %>%
+        with_tags(
+            "service:api",
+            paste0("trace_id:", trace_id),
+            paste0("span_id:", span_id)
+        )
+
+    log_service_a(NOTE("Request received"))
+
+    # Call service B, passing trace_id
+    service_b_handler(trace_id, parent_span_id = span_id)
+
+    log_service_a(MESSAGE("Request completed"))
+}
+
+# Service B: Continues the trace
+service_b_handler <- function(trace_id, parent_span_id) {
+    span_id <- "span_002"
+
+    log_service_b <- logger() %>%
+        with_receivers(to_identity()) %>%
+        with_tags(
+            "service:database",
+            paste0("trace_id:", trace_id),
+            paste0("span_id:", span_id),
+            paste0("parent_span:", parent_span_id)
+        )
+
+    log_service_b(NOTE("Database query started"))
+
+    # Simulate DB operation
+    Sys.sleep(0.05)
+
+    log_service_b(MESSAGE("Database query completed") %>%
+        with_tags("rows_returned:42"))
+}
+
+# Execute distributed operation
+service_a_handler()
+```
+
+## Audit Trail
+
+Create comprehensive audit logs:
+
+```{r audit-trail}
+# Audit logger for compliance
+create_audit_logger <- function() {
+    logger() %>%
+        with_receivers(to_identity()) %>%
+        with_tags(
+            "log_type:audit",
+            "compliance:required",
+            paste0("audit_timestamp:", Sys.time())
+        )
+}
+
+# Audit trail for sensitive operations
+audit_sensitive_operation <- function(user, action, resource, details = list()) {
+    log_audit <- create_audit_logger()
+
+    # Build audit tags
+    audit_tags <- c(
+        paste0("audit_user:", user),
+        paste0("audit_action:", action),
+        paste0("audit_resource:", resource),
+        paste0("audit_timestamp:", Sys.time())
+    )
+
+    # Add detail tags
+    if (length(details) > 0) {
+        detail_tags <- paste0("detail:", names(details), "=", details)
+        audit_tags <- c(audit_tags, detail_tags)
+    }
+
+    # Log with full audit context
+    log_audit(MESSAGE(paste("Audit:", action, "on", resource)) %>%
+        with_tags(audit_tags))
+}
+
+# Usage
+audit_sensitive_operation(
+    user = "admin@company.com",
+    action = "delete",
+    resource = "customer_data",
+    details = list(
+        customer_id = "CUST_12345",
+        reason = "GDPR_request",
+        ticket_id = "TICKET_789"
+    )
+)
+```
+
+# Best Practices
+
+## Tag Naming Conventions
+
+Establish consistent naming patterns:
+
+```{r tag-conventions}
+# Good: Use namespace prefixes
+good_tags <- c(
+    "service:api",           # Component namespace
+    "user:alice",            # Entity namespace
+    "request_id:12345",      # Identifier namespace
+    "status:success",        # State namespace
+    "duration_ms:100"        # Metric namespace
+)
+
+# Avoid: Inconsistent naming
+# bad_tags <- c("apiService", "User-Alice", "requestID12345")
+```
+
+## Tag Cardinality
+
+Be mindful of unique tag values:
+
+```{r tag-cardinality}
+# Good: Low cardinality - Finite set of values
+create_logger_good <- function() {
+    logger() %>%
+        with_receivers(to_identity()) %>%
+        with_tags(
+            "environment:production",  # Few values: dev, staging, prod
+            "region:us-east-1",        # Few values: list of regions
+            "service:api"              # Few values: list of services
+        )
+}
+
+# Caution: High cardinality - Use sparingly
+log_event_with_id <- function(log_func, user_id) {
+    # User IDs are high cardinality - OK for event tags,
+    # but don't use for logger-level tags
+    log_func(NOTE("User action") %>%
+        with_tags(paste0("user_id:", user_id)))
+}
+```
+
+## Structured Tag Queries
+
+Design tags for easy querying:
+
+```{r queryable-tags}
+# Design tags that enable filtering
+log_queryable <- logger() %>%
+    with_receivers(to_identity()) %>%
+    with_tags(
+        "app:my_app",
+        "env:production",
+        "version:2.1.0"
+    )
+
+# Events can be filtered by:
+# - Application: app:my_app
+# - Environment: env:production
+# - Version: version:2.1.0
+# - Any combination
+
+result <- log_queryable(ERROR("Database error") %>%
+    with_tags(
+        "component:database",
+        "error_code:DB_TIMEOUT",
+        "table:users"
+    ))
+
+# This event is queryable by all tags
+print(result$tags)
+```
+
+# Summary
+
+Tags in `logthis` provide a powerful foundation for:
+
+- **Provenance tracking** - Know where your data comes from and how it's processed
+- **Context capture** - Record execution environment, users, sessions, and more
+- **Observability** - Build structured, queryable logs for production monitoring
+- **Compliance** - Create audit trails with full context
+- **Debugging** - Filter and correlate logs across distributed systems
+
+By combining event-level, level-level, and logger-level tags, you can build sophisticated logging systems that provide deep insights into your application's behavior and data lineage.
