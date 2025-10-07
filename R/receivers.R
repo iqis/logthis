@@ -40,6 +40,164 @@ receiver <- function(func) {
   structure(func, class = c("log_receiver", "function"))
 }
 
+# ============================================================================
+# FORMATTERS - Convert events to formatted strings
+# ============================================================================
+
+#' Create a log formatter function
+#'
+#' Constructor for formatters that convert log events to strings. Formatters
+#' must be paired with a backend via on_*() functions before they can be used
+#' as receivers.
+#'
+#' @param func A function that accepts one argument named 'event' and returns a string
+#' @return A validated log formatter function with proper class attributes
+#' @keywords internal
+formatter <- function(func) {
+  if (!is.function(func)) {
+    stop("Formatter must be a function")
+  }
+
+  args <- formals(func)
+
+  if (length(args) != 1) {
+    stop("Formatter function must have exactly one argument, got ", length(args))
+  }
+
+  if (names(args)[1] != "event") {
+    stop("Formatter function argument must be named 'event', got '", names(args)[1], "'")
+  }
+
+  structure(func, class = c("log_formatter", "function"))
+}
+
+#' Create a text formatter
+#'
+#' Creates a formatter that converts log events to text using a glue template.
+#' Must be paired with a backend via on_*() functions before use in a logger.
+#'
+#' @section Available Template Variables:
+#'
+#' **Standard Event Fields** (always available):
+#' - `{time}` - Event timestamp
+#' - `{level}` - Event level name (e.g., "WARNING")
+#' - `{level_number}` - Numeric level value (e.g., 60)
+#' - `{message}` - The log message text
+#' - `{tags}` - Formatted tag list (e.g., "[auth, security]" or "" if no tags)
+#'
+#' **Custom Fields**: Any additional fields passed when creating the event
+#'
+#' @param template glue template string (default: "{time} [{level}:{level_number}] {message}")
+#' @return log formatter; <log_formatter>
+#' @export
+#' @family formatters
+#'
+#' @examples
+#' # Basic formatter with local backend
+#' to_text() %>% on_local(path = "app.log")
+#'
+#' # Custom template with tags
+#' to_text(template = "{time} [{level}] {tags} {message}") %>%
+#'   on_local(path = "app.log")
+to_text <- function(template = "{time} [{level}:{level_number}] {message}") {
+  fmt_func <- formatter(function(event) {
+    # Build data for glue template with ALL standard fields
+    data <- list(time = as.character(event$time),
+                 level = event$level_class,
+                 level_number = event$level_number,
+                 message = event$message,
+                 tags = if (!is.null(event$tags) && length(event$tags) > 0) {
+                   paste0("[", paste(event$tags, collapse = ", "), "]")
+                 } else {
+                   ""
+                 })
+
+    # Add custom event fields
+    custom_fields <- setdiff(names(event),
+                             c("time", "level_class", "level_number",
+                               "message", "tags"))
+    for (field in custom_fields) {
+      data[[field]] <- event[[field]]
+    }
+
+    glue::glue(template, .envir = list2env(data, parent = emptyenv()))
+  })
+
+  # Attach config
+  attr(fmt_func, "config") <- list(format_type = "text",
+                                    template = template,
+                                    backend = NULL,
+                                    backend_config = list(),
+                                    lower = NULL,
+                                    upper = NULL)
+
+  fmt_func
+}
+
+#' Create a JSON formatter
+#'
+#' Creates a formatter that converts log events to JSON (JSONL format).
+#' Must be paired with a backend via on_*() functions before use in a logger.
+#'
+#' @section JSON Output Structure:
+#'
+#' **Standard Fields** (always included):
+#' - `time` - Event timestamp as string
+#' - `level` - Event level name
+#' - `level_number` - Numeric level value
+#' - `message` - The log message text
+#' - `tags` - Array of tags (only if present)
+#'
+#' **Custom Fields**: Automatically included with types preserved
+#'
+#' @param pretty Pretty-print JSON (default: FALSE for compact JSONL)
+#' @return log formatter; <log_formatter>
+#' @export
+#' @family formatters
+#'
+#' @examples
+#' # Compact JSON to local file
+#' to_json() %>% on_local(path = "app.jsonl")
+#'
+#' # Pretty JSON for debugging
+#' to_json(pretty = TRUE) %>% on_local(path = "debug.json")
+to_json <- function(pretty = FALSE) {
+  fmt_func <- formatter(function(event) {
+    # Extract all event data
+    event_data <- list(time = as.character(event$time),
+                       level = event$level_class,
+                       level_number = as.numeric(event$level_number),
+                       message = event$message)
+
+    # Add tags if present
+    if (!is.null(event$tags) && length(event$tags) > 0) {
+      event_data$tags <- event$tags
+    }
+
+    # Add custom fields
+    custom_fields <- setdiff(names(event),
+                             c("time", "level_class", "level_number",
+                               "message", "tags"))
+    for (field in custom_fields) {
+      event_data[[field]] <- event[[field]]
+    }
+
+    jsonlite::toJSON(event_data,
+                     auto_unbox = TRUE,
+                     pretty = attr(sys.function(), "config")$pretty)
+  })
+
+  # Attach config
+  attr(fmt_func, "config") <- list(format_type = "json",
+                                    pretty = pretty,
+                                    backend = NULL,
+                                    backend_config = list(),
+                                    lower = NULL,
+                                    upper = NULL)
+
+  fmt_func
+}
+
 # Dummy receivers, mainly for testing
 #' Identity receiver for testing
 #'
@@ -65,6 +223,319 @@ to_identity <- function(){
 #' @export
 to_void <- function(){
   receiver(function(event){
+    invisible(NULL)
+  })
+}
+
+# ============================================================================
+# HANDLERS - Attach storage handlers to formatters
+# ============================================================================
+
+#' Attach local filesystem handler to formatter
+#'
+#' Configures a formatter to write to local files. Returns an enriched formatter
+#' that will be auto-converted to a receiver when passed to with_receivers().
+#'
+#' @param formatter A log formatter from to_text(), to_json(), etc.
+#' @param path File path for output
+#' @param append Append to existing file
+#' @param max_size Max file size in bytes before rotation (NULL = no rotation)
+#' @param max_files Number of rotated files to keep
+#' @return Enriched log formatter; <log_formatter>
+#' @export
+#' @family handlers
+#'
+#' @examples
+#' # Basic local file
+#' to_text() %>% on_local(path = "app.log")
+#'
+#' # With rotation
+#' to_text() %>% on_local(path = "app.log",
+#'                        max_size = 1e6,
+#'                        max_files = 10)
+on_local <- function(formatter,
+                     path,
+                     append = TRUE,
+                     max_size = NULL,
+                     max_files = 5) {
+  if (!inherits(formatter, "log_formatter")) {
+    stop("`formatter` must be a log_formatter created by to_text(), to_json(), etc.")
+  }
+
+  config <- attr(formatter, "config")
+
+  # Validate rotation config
+  if (!is.null(max_size)) {
+    stopifnot(is.numeric(max_size), max_size > 0)
+  }
+  if (!is.null(max_files)) {
+    stopifnot(is.numeric(max_files), max_files > 0)
+    max_files <- as.integer(max_files)
+  }
+
+  # Clear file if not appending
+  if (!append && file.exists(path)) {
+    unlink(path)
+  }
+
+  # Enrich config with handler info
+  config$backend <- "local"
+  config$backend_config <- list(path = path,
+                                 append = append,
+                                 max_size = max_size,
+                                 max_files = max_files)
+
+  # Return enriched formatter
+  attr(formatter, "config") <- config
+  formatter
+}
+
+#' Attach S3 handler to formatter
+#'
+#' @param formatter A log formatter
+#' @param bucket S3 bucket name
+#' @param key S3 object key (path within bucket)
+#' @param region AWS region
+#' @param ... Additional arguments passed to aws.s3::put_object()
+#' @return Enriched log formatter; <log_formatter>
+#' @export
+#' @family handlers
+#'
+#' @examples
+#' \dontrun{
+#' # Text logs to S3
+#' to_text() %>% on_s3(bucket = "my-logs",
+#'                     key = "app/production.log")
+#'
+#' # JSON logs to S3
+#' to_json() %>% on_s3(bucket = "my-logs",
+#'                     key = "app/events.jsonl")
+#' }
+on_s3 <- function(formatter,
+                  bucket,
+                  key,
+                  region = "us-east-1",
+                  ...) {
+  if (!inherits(formatter, "log_formatter")) {
+    stop("`formatter` must be a log_formatter")
+  }
+
+  config <- attr(formatter, "config")
+
+  config$backend <- "s3"
+  config$backend_config <- list(bucket = bucket,
+                                 key = key,
+                                 region = region,
+                                 extra_args = list(...))
+
+  attr(formatter, "config") <- config
+  formatter
+}
+
+#' Attach Azure Blob Storage handler to formatter
+#'
+#' @param formatter A log formatter
+#' @param container Azure container name
+#' @param blob Blob name (path within container)
+#' @param endpoint Azure storage endpoint (from AzureStor::storage_endpoint())
+#' @param ... Additional arguments
+#' @return Enriched log formatter; <log_formatter>
+#' @export
+#' @family handlers
+#'
+#' @examples
+#' \dontrun{
+#' endpoint <- AzureStor::storage_endpoint("https://myaccount.blob.core.windows.net",
+#'                                         key = "...")
+#' to_text() %>% on_azure(container = "logs",
+#'                        blob = "app.log",
+#'                        endpoint = endpoint)
+#' }
+on_azure <- function(formatter,
+                     container,
+                     blob,
+                     endpoint,
+                     ...) {
+  if (!inherits(formatter, "log_formatter")) {
+    stop("`formatter` must be a log_formatter")
+  }
+
+  config <- attr(formatter, "config")
+
+  config$backend <- "azure"
+  config$backend_config <- list(container = container,
+                                 blob = blob,
+                                 endpoint = endpoint,
+                                 extra_args = list(...))
+
+  attr(formatter, "config") <- config
+  formatter
+}
+
+# ============================================================================
+# INTERNAL: Formatter → Receiver Conversion
+# ============================================================================
+
+# Helper to rotate log files
+.rotate_file <- function(path, max_files) {
+  for (i in seq(max_files - 1, 1, -1)) {
+    old_path <- paste0(path, ".", i)
+    new_path <- paste0(path, ".", i + 1)
+    if (file.exists(old_path)) {
+      file.rename(old_path, new_path)
+    }
+  }
+  if (file.exists(path)) {
+    file.rename(path, paste0(path, ".1"))
+  }
+}
+
+# Convert formatter to receiver
+.formatter_to_receiver <- function(formatter) {
+  if (!inherits(formatter, "log_formatter")) {
+    stop("Must be a log_formatter")
+  }
+
+  config <- attr(formatter, "config")
+
+  if (is.null(config$backend)) {
+    stop("Formatter must have a handler configured via on_local(), on_s3(), etc.")
+  }
+
+  # Dispatch to handler-specific builder
+  if (config$backend == "local") {
+    .build_local_receiver(formatter, config)
+  } else if (config$backend == "s3") {
+    .build_s3_receiver(formatter, config)
+  } else if (config$backend == "azure") {
+    .build_azure_receiver(formatter, config)
+  } else {
+    stop("Unknown backend type: ", config$backend)
+  }
+}
+
+# Build local filesystem receiver
+.build_local_receiver <- function(formatter, config) {
+  bc <- config$backend_config
+
+  receiver(function(event) {
+    # Level filtering (if configured on formatter)
+    if (!is.null(config$lower) &&
+        event$level_number < attr(config$lower, "level_number")) {
+      return(invisible(NULL))
+    }
+    if (!is.null(config$upper) &&
+        event$level_number > attr(config$upper, "level_number")) {
+      return(invisible(NULL))
+    }
+
+    # Check rotation
+    if (!is.null(bc$max_size) && file.exists(bc$path)) {
+      file_size <- file.info(bc$path)$size
+      if (!is.na(file_size) && file_size >= bc$max_size) {
+        .rotate_file(bc$path, bc$max_files)
+      }
+    }
+
+    # Format and write
+    content <- formatter(event)
+    cat(content, "\n", file = bc$path, append = TRUE)
+
+    invisible(NULL)
+  })
+}
+
+# Build S3 receiver
+.build_s3_receiver <- function(formatter, config) {
+  bc <- config$backend_config
+
+  # Check package availability at receiver creation time
+  if (!requireNamespace("aws.s3", quietly = TRUE)) {
+    stop("Package 'aws.s3' required for S3 backend. Install with: install.packages('aws.s3')")
+  }
+
+  receiver(function(event) {
+    # Level filtering
+    if (!is.null(config$lower) &&
+        event$level_number < attr(config$lower, "level_number")) {
+      return(invisible(NULL))
+    }
+    if (!is.null(config$upper) &&
+        event$level_number > attr(config$upper, "level_number")) {
+      return(invisible(NULL))
+    }
+
+    # Format
+    content <- formatter(event)
+
+    # Write to S3 (append by reading, appending, writing back)
+    tryCatch({
+      # Try to read existing content
+      existing <- tryCatch(aws.s3::get_object(object = bc$key,
+                                              bucket = bc$bucket,
+                                              region = bc$region,
+                                              as = "text"),
+                           error = function(e) "")
+
+      # Append new content
+      new_content <- paste0(existing, content, "\n")
+
+      # Write back
+      do.call(aws.s3::put_object,
+              c(list(file = charToRaw(new_content),
+                     object = bc$key,
+                     bucket = bc$bucket,
+                     region = bc$region),
+                bc$extra_args))
+    }, error = function(e) {
+      warning("S3 write failed: ", conditionMessage(e), call. = FALSE)
+    })
+
+    invisible(NULL)
+  })
+}
+
+# Build Azure receiver
+.build_azure_receiver <- function(formatter, config) {
+  bc <- config$backend_config
+
+  if (!requireNamespace("AzureStor", quietly = TRUE)) {
+    stop("Package 'AzureStor' required for Azure backend")
+  }
+
+  receiver(function(event) {
+    # Level filtering
+    if (!is.null(config$lower) &&
+        event$level_number < attr(config$lower, "level_number")) {
+      return(invisible(NULL))
+    }
+    if (!is.null(config$upper) &&
+        event$level_number > attr(config$upper, "level_number")) {
+      return(invisible(NULL))
+    }
+
+    # Format
+    content <- formatter(event)
+
+    # Write to Azure Blob
+    tryCatch({
+      cont <- AzureStor::blob_container(bc$endpoint, bc$container)
+
+      # Read existing, append, write back (simplified)
+      existing <- tryCatch(AzureStor::storage_download(cont,
+                                                        bc$blob,
+                                                        overwrite = TRUE),
+                           error = function(e) "")
+
+      new_content <- paste0(existing, content, "\n")
+
+      do.call(AzureStor::storage_upload,
+              c(list(cont, charToRaw(new_content), bc$blob),
+                bc$extra_args))
+    }, error = function(e) {
+      warning("Azure write failed: ", conditionMessage(e), call. = FALSE)
+    })
+
     invisible(NULL)
   })
 }

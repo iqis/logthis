@@ -44,6 +44,24 @@ logger <- function() {
 - Wrapped with `receiver()` constructor for validation
 - Can have optional level filtering via `lower`/`upper` parameters
 
+**Formatter/Handler Composition:**
+```r
+# Formatters define HOW events are formatted
+to_text(template = "{time} [{level}] {message}")  # Returns log_formatter
+to_json(pretty = FALSE)                            # Returns log_formatter
+
+# Handlers define WHERE formatted output goes
+on_local(path = "app.log", max_size = 1e6)         # Attaches local filesystem handler
+on_s3(bucket = "logs", key = "app.jsonl")          # Attaches S3 handler
+on_azure(container = "logs", blob = "app.log")     # Attaches Azure handler
+
+# Compose: formatter + handler = receiver (auto-converted by with_receivers)
+logger() %>%
+  with_receivers(to_text() %>% on_local(path = "app.log"),
+                 to_json() %>% on_s3(bucket = "logs", key = "events.jsonl"))
+```
+**Key insight:** Easy to add new formats (write `to_xyz()`) or new handlers (write `on_xyz()`) independently
+
 **Logger Chaining:**
 ```r
 WARNING("msg") %>% log_console() %>% log_file()  # Event flows through both
@@ -166,6 +184,85 @@ test_that("descriptive test name", {
 ```
 
 ## Common Tasks
+
+### Adding a New Formatter
+
+1. **Create formatter function in R/receivers.R:**
+```r
+#' @export
+#' @family formatters
+to_csv <- function(separator = ",") {
+  formatter(function(event) {
+    # Build CSV row with standard fields
+    fields <- c(as.character(event$time),
+                event$level_class,
+                event$level_number,
+                event$message)
+    paste(fields, collapse = separator)
+  })
+
+  # Attach config
+  attr(fmt_func, "config") <- list(format_type = "csv",
+                                    separator = separator,
+                                    backend = NULL,
+                                    backend_config = list(),
+                                    lower = NULL,
+                                    upper = NULL)
+  fmt_func
+}
+```
+
+2. **Usage:** `to_csv() %>% on_local(path = "app.csv")`
+
+### Adding a New Handler
+
+1. **Create handler function in R/receivers.R:**
+```r
+#' @export
+#' @family handlers
+on_gcs <- function(formatter, bucket, object, project, ...) {
+  if (!inherits(formatter, "log_formatter")) {
+    stop("`formatter` must be a log_formatter")
+  }
+
+  config <- attr(formatter, "config")
+  config$backend <- "gcs"
+  config$backend_config <- list(bucket = bucket,
+                                 object = object,
+                                 project = project,
+                                 extra_args = list(...))
+
+  attr(formatter, "config") <- config
+  formatter
+}
+```
+
+2. **Create builder in R/receivers.R (internal):**
+```r
+.build_gcs_receiver <- function(formatter, config) {
+  bc <- config$backend_config
+
+  receiver(function(event) {
+    # Level filtering
+    if (!is.null(config$lower) &&
+        event$level_number < attr(config$lower, "level_number")) {
+      return(invisible(NULL))
+    }
+
+    # Format and write to GCS
+    content <- formatter(event)
+    # googleCloudStorageR::gcs_upload(content, ...)
+
+    invisible(NULL)
+  })
+}
+```
+
+3. **Add to dispatcher in .formatter_to_receiver():**
+```r
+} else if (config$backend == "gcs") {
+  .build_gcs_receiver(formatter, config)
+```
 
 ### Adding a New Receiver
 

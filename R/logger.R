@@ -154,19 +154,29 @@ with_receivers <- function(logger, ..., append = TRUE){
 
   # Capture the original calls to the receivers
   receiver_calls <- substitute(list(...))[-1]  # Remove the 'list' part
-  receivers <- unlist(list(...))
+  receivers_or_formatters <- unlist(list(...))  # Flatten nested lists like old behavior
 
-  if (length(receivers) == 0) {
+  if (length(receivers_or_formatters) == 0) {
     warning("`...` (receivers) is not supplied.")
   }
 
-  purrr::map(receivers,
-             ~ {if (!inherits(., "log_receiver")) {
-               stop("Argument `...` (receivers) must be of type 'log_receiver'")
-             }})
+  # Auto-convert formatters to receivers
+  receivers <- purrr::map(receivers_or_formatters,
+                          function(x) {
+                            if (inherits(x, "log_formatter")) {
+                              # Convert formatter to receiver
+                              .formatter_to_receiver(x)
+                            } else if (inherits(x, "log_receiver")) {
+                              # Already a receiver
+                              x
+                            } else {
+                              stop("Arguments must be log_receiver or log_formatter (from to_text() %>% on_*())")
+                            }
+                          })
 
   # Convert receiver calls to plain text labels for error reporting
-  receiver_labels <- purrr::map_chr(as.list(receiver_calls), ~deparse(., width.cutoff = 500))
+  receiver_labels <- purrr::map_chr(as.list(receiver_calls),
+                                    ~deparse(., width.cutoff = 500))
 
   config <- attr(logger, "config")
   if (append) {
@@ -343,6 +353,33 @@ with_limits.log_receiver <- function(x, lower = LOWEST, upper = HIGHEST, ...){
   attr(wrapped_receiver, "original_receiver") <- original_receiver
 
   wrapped_receiver
+}
+
+#' Set formatter-level limits
+#'
+#' Sets filtering limits on a formatter before it's converted to a receiver.
+#' This allows for level filtering to be configured on formatters.
+#'
+#' @param formatter A log formatter from to_text(), to_json(), etc.
+#' @param lower Lower level limit (inclusive)
+#' @param upper Upper level limit (inclusive)
+#' @param ... Additional arguments (unused)
+#' @return Enriched log formatter; <log_formatter>
+#' @export
+#' @family formatters
+with_limits.log_formatter <- function(formatter,
+                                      lower = LOWEST,
+                                      upper = HIGHEST,
+                                      ...) {
+  guard_level_type(lower)
+  guard_level_type(upper)
+
+  config <- attr(formatter, "config")
+  config$lower <- lower
+  config$upper <- upper
+
+  attr(formatter, "config") <- config
+  formatter
 }
 
 
