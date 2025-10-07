@@ -28,16 +28,16 @@ This document outlines improvements to make logthis production-ready for CRAN su
 ## Phase 1: Complete Core Functionality
 
 ### 1.1 Implement `with_limits.log_receiver()`
-**File:** `R/logger.R:231-238`
-**Status:** 🔴 Not started (empty implementation)
-**Tasks:**
-- [ ] Implement receiver-level limit setting
-- [ ] Add validation for limit ranges [0, 120]
-- [ ] Store limits in receiver attributes
-- [ ] Add tests for receiver limit configuration
-- [ ] Update documentation with examples
+**File:** `R/logger.R:269-347`
+**Status:** ✅ Complete
+**Completed:**
+- [x] Implement receiver-level limit setting (wrapper pattern)
+- [x] Add validation for limit ranges [0, 119] and [1, 120]
+- [x] Store limits in receiver attributes
+- [x] Add tests for receiver limit configuration (3 tests in test-receivers.R)
+- [x] Update documentation with comprehensive examples
 
-Note: This allows for more finegrained control over what event level does each receiver accept. the user can ***_receiver() %>% with_limits(...)
+Note: Allows fine-grained control over which events each receiver accepts. Users can chain: `to_console() %>% with_limits(lower = WARNING)`
 
 
 ### 1.2 Complete `with_tags()` Functionality
@@ -225,7 +225,9 @@ Note:  dummy_logger() would just be void_logger(), let's use void_logger().
 
 - [x] Receiver error handling implemented ✅
 - [x] Test suite comprehensive (111 tests passing) ✅
-- [ ] All Phase 1 TODOs completed (1 of 2 remaining)
+- [x] All Phase 1 core functionality complete ✅
+  - [x] with_limits.log_receiver() complete ✅
+  - [x] with_tags() mostly complete (logger-level tags working) ✅
 - [ ] Zero ERRORs/WARNINGs from R CMD check
 - [ ] Test coverage ≥ 90%
 - [ ] Documentation complete and consistent
