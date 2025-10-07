@@ -3,13 +3,33 @@
 ## Overview
 This document outlines improvements to make logthis production-ready for CRAN submission. Focus on completing TODOs, enhancing functionality, and polishing documentation.
 
+**Last Updated:** 2025-10-07
+
+---
+
+## Recent Accomplishments (2025-10-07)
+
+### ✅ Resilient Receiver Error Handling
+- Implemented `purrr::safely()` wrapper for all receiver executions
+- Receivers now execute independently - one failure doesn't stop others
+- Added receiver label capture for detailed error provenance
+- Receiver failures logged as ERROR events with 'receiver_error' tag
+- Fallback to `to_console()` for error reporting, `warning()` as last resort
+- Added comprehensive tests (111 tests passing)
+- Error messages include: receiver #, error message, full receiver call
+
+### ✅ Configuration Improvements
+- Renamed `receiver_calls` to `receiver_labels` (plain text, not pairlists)
+- Updated `print.logger()` to use receiver_labels
+- Fixed devcontainer to include git-lfs by default
+
 ---
 
 ## Phase 1: Complete Core Functionality
 
 ### 1.1 Implement `with_limits.log_receiver()`
 **File:** `R/logger.R:231-238`
-**Status:** Empty implementation
+**Status:** 🔴 Not started (empty implementation)
 **Tasks:**
 - [ ] Implement receiver-level limit setting
 - [ ] Add validation for limit ranges [0, 120]
@@ -17,19 +37,21 @@ This document outlines improvements to make logthis production-ready for CRAN su
 - [ ] Add tests for receiver limit configuration
 - [ ] Update documentation with examples
 
-Note: This allows for more finegrained control over what event level does each receiver accept. the user can ***_receiver() %>% with_limits(...) 
+Note: This allows for more finegrained control over what event level does each receiver accept. the user can ***_receiver() %>% with_limits(...)
 
 
 ### 1.2 Complete `with_tags()` Functionality
 **File:** `R/logger.R:244-303`
-**Status:** Partially implemented with TODOs
+**Status:** 🟡 Partially complete
+**Completed:**
+- [x] Logger-level tags implemented and applied to events (R/logger.R:49-53)
+- [x] Comprehensive test suite added (tests/testthat/test-tags.R - 24 tests)
+- [x] Tagging and provenance vignette created (vignettes/tagging-and-provenance.Rmd)
+- [x] README updated with tag examples
+
 **Tasks:**
 - [ ] Complete `with_tags.log_event_level()` - auto-apply tags to all events of that level
-- [ ] Complete `with_tags.logger()` - store tags in logger config and apply to all events
-- [ ] Implement tag application in logger function
-- [ ] Add tests for tag functionality
-- [ ] Document tag usage patterns in README
-- [ ] Add examples showing tag filtering/categorization
+- [ ] Add tag filtering/search utilities (optional enhancement)
 
 ---
 
@@ -201,7 +223,9 @@ Note:  dummy_logger() would just be void_logger(), let's use void_logger().
 
 ## Success Criteria
 
-- [ ] All Phase 1 TODOs completed
+- [x] Receiver error handling implemented ✅
+- [x] Test suite comprehensive (111 tests passing) ✅
+- [ ] All Phase 1 TODOs completed (1 of 2 remaining)
 - [ ] Zero ERRORs/WARNINGs from R CMD check
 - [ ] Test coverage ≥ 90%
 - [ ] Documentation complete and consistent
