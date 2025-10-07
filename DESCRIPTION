@@ -28,7 +28,6 @@ Suggests:
     shiny
 Imports:
     magrittr,
-    crayon,
     glue,
     jsonlite
 VignetteBuilder: knitr

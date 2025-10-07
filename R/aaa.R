@@ -1,4 +1,3 @@
-#' @importFrom crayon white silver green yellow red bold cyan
 NULL
 
 guard_level_type <- function(level){
@@ -13,18 +12,19 @@ guard_level_type <- function(level){
 
 # Package-level constant for log level to color mapping
 # Used by to_console() receiver
+# ANSI escape codes for terminal colors (replaces crayon dependency)
 # Maps to levels: LOWEST(0), TRACE(10), DEBUG(20), NOTE(30), MESSAGE(40), WARNING(60), ERROR(80), CRITICAL(90), HIGHEST(100)
 .LEVEL_COLOR_MAP <- list(
   levels = c(0, 10, 20, 30, 40, 60, 80, 90),
   colors = list(
-    crayon::white,                              # LOWEST (boundary)
-    crayon::silver,                             # TRACE
-    crayon::cyan,                               # DEBUG
-    crayon::green,                              # NOTE
-    crayon::yellow,                             # MESSAGE
-    crayon::red,                                # WARNING
-    function(x) crayon::bold(crayon::red(x)),   # ERROR
-    function(x) crayon::bold(crayon::red(x))    # CRITICAL + HIGHEST
+    function(x) paste0("\033[97m", x, "\033[39m"),   # white (LOWEST)
+    function(x) paste0("\033[90m", x, "\033[39m"),   # bright black/silver (TRACE)
+    function(x) paste0("\033[36m", x, "\033[39m"),   # cyan (DEBUG)
+    function(x) paste0("\033[32m", x, "\033[39m"),   # green (NOTE)
+    function(x) paste0("\033[33m", x, "\033[39m"),   # yellow (MESSAGE)
+    function(x) paste0("\033[31m", x, "\033[39m"),   # red (WARNING)
+    function(x) paste0("\033[1;31m", x, "\033[0m"),  # bold red (ERROR)
+    function(x) paste0("\033[1;31m", x, "\033[0m")   # bold red (CRITICAL + HIGHEST)
   )
 )
 
