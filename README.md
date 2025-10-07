@@ -106,6 +106,9 @@ to_console(lower = LOWEST, upper = HIGHEST)
 # File output - writes logs to text files
 to_text_file(path = "app.log", lower = LOWEST, upper = HIGHEST)
 
+# JSON file output - structured logging for log aggregation systems
+to_json_file(path = "app.jsonl", lower = LOWEST, upper = HIGHEST)
+
 # Shiny alerts (for Shiny applications)
 to_shinyalert(lower = WARNING, upper = HIGHEST)
 

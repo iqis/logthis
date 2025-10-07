@@ -315,3 +315,88 @@ to_text_file <- function(lower = LOWEST,
     })
 }
 
+#' JSON file logging receiver
+#'
+#' Writes log events to a file as JSON objects, one per line (JSONL format).
+#' This format is ideal for log aggregation systems, cloud logging services,
+#' and structured log analysis tools.
+#'
+#' Each log entry is written as a single-line JSON object containing all event
+#' metadata: timestamp, level, message, and tags.
+#'
+#' Level limits are inclusive: events with level_number >= lower AND <= upper
+#' will be written to the file.
+#'
+#' @param lower minimum level to log (inclusive, optional); <log_event_level>
+#' @param upper maximum level to log (inclusive, optional); <log_event_level>
+#' @param path file path for JSON log output; <character>
+#' @param append whether to append to existing file; <logical>
+#' @param pretty whether to pretty-print JSON (default: FALSE for compact output); <logical>
+#' @param ... additional arguments (unused)
+#'
+#' @return log receiver function; <log_receiver>
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' # Basic JSON logging
+#' json_recv <- to_json_file(path = "app.jsonl")
+#'
+#' # JSON logging with pretty printing (for debugging)
+#' pretty_json <- to_json_file(path = "debug.json", pretty = TRUE)
+#'
+#' # Use with logger
+#' log_this <- logger() %>%
+#'     with_receivers(
+#'         to_console(),  # Human-readable console output
+#'         to_json_file(path = "logs/app.jsonl")  # Machine-readable structured logs
+#'     )
+#'
+#' log_this(NOTE("User login", tags = c("auth", "user:123")))
+#' # Outputs: {"time":"2025-10-07 18:30:00","level":"NOTE","level_number":40,"message":"User login","tags":["auth","user:123"]}
+#' }
+#'
+to_json_file <- function(lower = LOWEST,
+                         upper = HIGHEST,
+                         path = "log.jsonl",
+                         append = FALSE,
+                         pretty = FALSE, ...){
+  stopifnot(is.character(path),
+            is.logical(append),
+            is.logical(pretty))
+
+  if (!append) {
+    unlink(path)
+  }
+
+  receiver(
+    function(event){
+      `if`(!inherits(event, "log_event"),
+           stop("`event` must be of class `log_event`"))
+
+      if (attr(lower, "level_number") <= event$level_number &&
+          event$level_number <= attr(upper, "level_number")) {
+
+        # Convert event to list for JSON serialization
+        event_data <- list(
+          time = as.character(event$time),
+          level = event$level_class,
+          level_number = as.numeric(event$level_number),
+          message = event$message
+        )
+
+        # Add tags if present
+        if (!is.null(event$tags) && length(event$tags) > 0) {
+          event_data$tags <- event$tags
+        }
+
+        # Serialize to JSON
+        json_line <- jsonlite::toJSON(event_data, auto_unbox = TRUE, pretty = pretty)
+
+        # Write to file (one JSON object per line for JSONL format)
+        cat(json_line, "\n", file = path, append = TRUE, sep = "")
+      }
+      invisible(NULL)
+    })
+}
+

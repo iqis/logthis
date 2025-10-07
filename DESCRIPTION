@@ -30,5 +30,6 @@ Imports:
     magrittr,
     purrr,
     crayon,
-    glue
+    glue,
+    jsonlite
 VignetteBuilder: knitr

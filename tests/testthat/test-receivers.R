@@ -231,3 +231,95 @@ test_that("to_text_file() rotation preserves correct order", {
   # Clean up
   unlink(paste0(log_path, "*"))
 })
+
+test_that("to_json_file() creates valid JSONL output", {
+  temp_dir <- tempdir()
+  json_path <- file.path(temp_dir, "test.jsonl")
+
+  # Clean up
+  unlink(json_path)
+
+  # Create JSON receiver and log events
+  json_recv <- to_json_file(path = json_path)
+  log_test <- logger() %>% with_receivers(json_recv) %>% with_tags("test", "warning")
+
+  log_test(NOTE("First message"))
+  log_test(WARNING("Second message"))
+
+  # Read and parse JSON lines
+  lines <- readLines(json_path)
+  expect_equal(length(lines), 2)
+
+  # Parse first line
+  event1 <- jsonlite::fromJSON(lines[1])
+  expect_equal(event1$level, "NOTE")
+  expect_equal(event1$level_number, 40)
+  expect_equal(event1$message, "First message")
+  expect_true("time" %in% names(event1))
+
+  # Both lines should have tags from logger-level tagging
+  event2 <- jsonlite::fromJSON(lines[2])
+  expect_equal(event2$level, "WARNING")
+  expect_equal(event2$message, "Second message")
+  expect_equal(event2$tags, c("test", "warning"))
+
+  # Clean up
+  unlink(json_path)
+})
+
+test_that("to_json_file() respects level limits", {
+  temp_dir <- tempdir()
+  json_path <- file.path(temp_dir, "filtered.jsonl")
+
+  # Clean up
+  unlink(json_path)
+
+  # Create receiver that only logs WARNING and above
+  json_recv <- to_json_file(path = json_path, lower = WARNING)
+  log_test <- logger() %>% with_receivers(json_recv)
+
+  log_test(NOTE("Should be filtered"))
+  log_test(WARNING("Should appear"))
+  log_test(ERROR("Should also appear"))
+
+  # Should only have 2 lines (WARNING and ERROR)
+  lines <- readLines(json_path)
+  expect_equal(length(lines), 2)
+
+  event1 <- jsonlite::fromJSON(lines[1])
+  expect_equal(event1$level, "WARNING")
+
+  event2 <- jsonlite::fromJSON(lines[2])
+  expect_equal(event2$level, "ERROR")
+
+  # Clean up
+  unlink(json_path)
+})
+
+test_that("to_json_file() pretty printing works", {
+  temp_dir <- tempdir()
+  json_path <- file.path(temp_dir, "pretty.json")
+
+  # Clean up
+  unlink(json_path)
+
+  # Create receiver with pretty printing
+  json_recv <- to_json_file(path = json_path, pretty = TRUE)
+  log_test <- logger() %>% with_receivers(json_recv)
+
+  log_test(NOTE("Test message"))
+
+  # Read content
+  content <- paste(readLines(json_path), collapse = "\n")
+
+  # Pretty-printed JSON should have newlines and indentation
+  expect_true(grepl("\\n", content))
+  expect_true(grepl("  ", content))  # Should have indentation
+
+  # Should still parse correctly
+  parsed <- jsonlite::fromJSON(content)
+  expect_equal(parsed$message, "Test message")
+
+  # Clean up
+  unlink(json_path)
+})
