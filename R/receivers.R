@@ -92,6 +92,12 @@ formatter <- function(func) {
 #' @export
 #' @family formatters
 #'
+#' @section Type Contract:
+#' ```
+#' to_text(template: string = "{time} [{level}:{level_number}] {message}") -> log_formatter
+#'   where log_formatter is enriched by on_*() handlers
+#' ```
+#'
 #' @examples
 #' # Basic formatter with local backend
 #' to_text() %>% on_local(path = "app.log")
@@ -154,6 +160,12 @@ to_text <- function(template = "{time} [{level}:{level_number}] {message}") {
 #' @return log formatter; <log_formatter>
 #' @export
 #' @family formatters
+#'
+#' @section Type Contract:
+#' ```
+#' to_json(pretty: logical = FALSE) -> log_formatter
+#'   where log_formatter is enriched by on_*() handlers
+#' ```
 #'
 #' @examples
 #' # Compact JSON to local file
@@ -245,6 +257,12 @@ to_void <- function(){
 #' @export
 #' @family handlers
 #'
+#' @section Type Contract:
+#' ```
+#' on_local(formatter: log_formatter, path: string, append: logical = TRUE,
+#'          max_size: numeric | NULL = NULL, max_files: numeric = 5) -> log_formatter
+#' ```
+#'
 #' @examples
 #' # Basic local file
 #' to_text() %>% on_local(path = "app.log")
@@ -259,7 +277,11 @@ on_local <- function(formatter,
                      max_size = NULL,
                      max_files = 5) {
   if (!inherits(formatter, "log_formatter")) {
-    stop("`formatter` must be a log_formatter created by to_text(), to_json(), etc.")
+    stop("`formatter` must be a log_formatter created by to_text(), to_json(), etc.\n",
+         "  Got: ", class(formatter)[1], "\n",
+         "  Solution: Use to_text() or to_json() to create formatter first\n",
+         "  Example: to_text() %>% on_local(path = \"app.log\")\n",
+         "  See: .claude/decision-tree.md section 4 for formatting options")
   }
 
   config <- attr(formatter, "config")
@@ -317,7 +339,11 @@ on_s3 <- function(formatter,
                   region = "us-east-1",
                   ...) {
   if (!inherits(formatter, "log_formatter")) {
-    stop("`formatter` must be a log_formatter")
+    stop("`formatter` must be a log_formatter.\n",
+         "  Got: ", class(formatter)[1], "\n",
+         "  Solution: Use to_text() or to_json() to create formatter first\n",
+         "  Example: to_json() %>% on_s3(bucket = \"logs\", key = \"app.jsonl\")\n",
+         "  See: UC-010 in .claude/use-cases.md")
   }
 
   config <- attr(formatter, "config")
@@ -357,7 +383,11 @@ on_azure <- function(formatter,
                      endpoint,
                      ...) {
   if (!inherits(formatter, "log_formatter")) {
-    stop("`formatter` must be a log_formatter")
+    stop("`formatter` must be a log_formatter.\n",
+         "  Got: ", class(formatter)[1], "\n",
+         "  Solution: Use to_text() or to_json() to create formatter first\n",
+         "  Example: to_json() %>% on_azure(container = \"logs\", blob = \"app.jsonl\")\n",
+         "  See: UC-011 in .claude/use-cases.md")
   }
 
   config <- attr(formatter, "config")
@@ -554,6 +584,12 @@ on_azure <- function(formatter,
 #'
 #' @return log receiver function; <log_receiver>
 #' @export
+#'
+#' @section Type Contract:
+#' ```
+#' to_console(lower: log_event_level = LOWEST, upper: log_event_level = HIGHEST) -> log_receiver
+#'   where log_receiver = function(log_event) -> NULL (invisible)
+#' ```
 #'
 #' @examples
 #' # Basic console output (no filtering)

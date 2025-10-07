@@ -9,6 +9,12 @@
 #'
 #' @return log event constructor; <function>
 #' @export
+#'
+#' @section Type Contract:
+#' ```
+#' log_event_level(level_class: string, level_number: numeric) -> log_event_level
+#'   where log_event_level = function(message: string = "", ...) -> log_event
+#' ```
 log_event_level <- function(level_class, level_number){
 
   `if`(!is.character(level_class),

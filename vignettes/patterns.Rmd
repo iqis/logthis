@@ -1,0 +1,625 @@
+---
+title: "Common Patterns and Recipes"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Common Patterns and Recipes}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(logthis)
+```
+
+This vignette catalogs common logging patterns with the `logthis` package. Each pattern is tagged for easy search and reference.
+
+---
+
+## Pattern: Basic Logging
+**Tags**: `#basic`, `#console`, `#getting-started`
+
+Create a logger and log to console.
+
+```{r eval=FALSE}
+log_this <- logger() %>%
+  with_receivers(to_console())
+
+log_this(NOTE("Application started"))
+log_this(ERROR("Something failed"))
+```
+
+**When to use**: Development, debugging, simple applications.
+
+---
+
+## Pattern: Multi-Destination Logging
+**Tags**: `#multi-destination`, `#console`, `#file`, `#s3`, `#azure`
+
+Log to multiple destinations simultaneously.
+
+```{r eval=FALSE}
+log_this <- logger() %>%
+  with_receivers(
+    to_console(),                    # For development visibility
+    to_text_file("app.log"),         # For local debugging
+    to_json() %>%                    # For production analytics
+      on_s3(bucket = "logs",
+            key = "prod/app.jsonl")
+  )
+
+log_this(ERROR("Database timeout", query = "SELECT ...", duration_ms = 5000))
+# → Appears in console, app.log, and S3
+```
+
+**When to use**: Production applications, when different consumers need different formats.
+
+---
+
+## Pattern: Tiered Filtering
+**Tags**: `#filtering`, `#levels`, `#performance`
+
+Different log levels for different receivers.
+
+```{r eval=FALSE}
+log_this <- logger() %>%
+  with_receivers(
+    to_console(lower = ERROR),       # Console: errors only
+    to_text_file("debug.log"),       # File: everything
+    to_json() %>%                    # S3: warnings and above
+      on_s3(bucket = "logs",
+            key = "warnings.jsonl",
+            lower = WARNING)
+  )
+
+log_this(DEBUG("Detailed info"))     # Only in debug.log
+log_this(WARNING("Heads up"))        # debug.log + S3
+log_this(ERROR("Failed"))            # All three destinations
+```
+
+**When to use**: Reduce noise in console, balance detail vs. cost, optimize performance.
+
+---
+
+## Pattern: File Rotation
+**Tags**: `#file`, `#rotation`, `#disk-management`
+
+Automatically rotate log files when they reach size limit.
+
+```{r eval=FALSE}
+log_this <- logger() %>%
+  with_receivers(
+    to_text_file(path = "app.log",
+                 max_size = 10485760,    # 10 MB
+                 max_files = 5)          # Keep 5 rotations
+  )
+
+# When app.log reaches 10MB:
+# app.log.4 → deleted
+# app.log.3 → app.log.4
+# app.log.2 → app.log.3
+# app.log.1 → app.log.2
+# app.log   → app.log.1
+# (new)     → app.log
+```
+
+**When to use**: Long-running applications, disk space constraints.
+
+---
+
+## Pattern: Tagged Events
+**Tags**: `#tagging`, `#categorization`, `#filtering`
+
+Add tags for categorization and filtering.
+
+```{r eval=FALSE}
+# Global tags (applied to all events)
+log_this <- logger() %>%
+  with_receivers(to_json_file("events.jsonl")) %>%
+  with_tags("api", "production", "v2")
+
+# Per-event tags
+log_this(NOTE("Request received",
+              tags = c("auth", "success")))
+# → Event has tags: ["api", "production", "v2", "auth", "success"]
+
+# Use tags in templates
+log_this <- logger() %>%
+  with_receivers(
+    to_text("{time} {tags} [{level}] {message}") %>%
+      on_local("tagged.log")
+  )
+```
+
+**When to use**: Categorize events, filter logs downstream, trace request flows.
+
+---
+
+## Pattern: Custom Fields
+**Tags**: `#custom-fields`, `#context`, `#structured`
+
+Add arbitrary context to events.
+
+```{r eval=FALSE}
+log_this <- logger() %>%
+  with_receivers(to_json_file("events.jsonl"))
+
+log_this(ERROR("Payment failed",
+               user_id = 12345,
+               transaction_id = "txn_abc",
+               amount = 99.99,
+               payment_method = "visa"))
+
+# JSON output includes all fields:
+# {
+#   "time": "2025-10-07T10:23:45",
+#   "level": "ERROR",
+#   "message": "Payment failed",
+#   "user_id": 12345,
+#   "transaction_id": "txn_abc",
+#   ...
+# }
+```
+
+**When to use**: Structured logging, event analytics, debugging complex systems.
+
+---
+
+## Pattern: Custom Template
+**Tags**: `#formatting`, `#template`, `#customization`
+
+Define custom text format with template variables.
+
+```{r eval=FALSE}
+log_this <- logger() %>%
+  with_receivers(
+    to_text("{time} | {level}:{level_number} | {message}") %>%
+      on_local("custom.log")
+  )
+
+log_this(NOTE("Custom format"))
+# Output: 2025-10-07 10:23:45 | NOTE:30 | Custom format
+
+# Include custom fields
+log_this <- logger() %>%
+  with_receivers(
+    to_text("{time} [{level}] {message} | User: {user_id}") %>%
+      on_local("app.log")
+  )
+
+log_this(NOTE("Action performed", user_id = 456))
+# Output: 2025-10-07 10:23:45 [NOTE] Action performed | User: 456
+```
+
+**When to use**: Legacy log format compatibility, specific parsing requirements.
+
+---
+
+## Pattern: Scope-Based Enhancement
+**Tags**: `#scope`, `#immutability`, `#enhancement`
+
+Add logging for specific function without modifying base logger.
+
+```{r eval=FALSE}
+# Shared base logger
+.base_logger <- logger() %>%
+  with_receivers(to_console())
+
+# Function-specific enhanced logger
+process_data <- function(data) {
+  log_this <- .base_logger %>%
+    with_receivers(to_text_file("process_data_detail.log")) %>%
+    with_tags("process_data")
+
+  log_this(NOTE("Processing started", rows = nrow(data)))
+  # ... processing logic ...
+  log_this(NOTE("Processing complete"))
+
+  data
+}
+
+# Base logger unchanged, enhancement scoped to function
+```
+
+**When to use**: Add detail for specific subsystems, maintain clean base logger.
+
+---
+
+## Pattern: Pipeline Logging
+**Tags**: `#pipeline`, `#dplyr`, `#magrittr`, `#chaining`
+
+Log in the middle of data pipelines.
+
+```{r eval=FALSE}
+library(dplyr)
+
+log_this <- logger() %>% with_receivers(to_console())
+
+result <- iris %>%
+  filter(Species == "setosa") %>%
+  log_this(NOTE("Filtered to setosa")) %>%
+  mutate(petal_ratio = Petal.Length / Petal.Width) %>%
+  log_this(NOTE("Calculated ratios")) %>%
+  arrange(desc(petal_ratio))
+
+# Logger returns data unchanged, pipeline continues seamlessly
+```
+
+**When to use**: Debug pipelines, trace data transformations, monitor data volume.
+
+---
+
+## Pattern: Conditional Logging
+**Tags**: `#conditional`, `#performance`, `#optimization`
+
+Skip expensive logging when level is filtered.
+
+```{r eval=FALSE}
+log_this <- logger() %>%
+  with_receivers(to_console()) %>%
+  with_limits(lower = WARNING, upper = HIGHEST)
+
+# Bad: Always computes expensive_data even if filtered
+log_this(DEBUG("Debug info", data = compute_expensive_data()))
+
+# Good: Check filter first
+if (as.numeric(attr(log_this, "config")$limits$lower) <= 20) {
+  log_this(DEBUG("Debug info", data = compute_expensive_data()))
+}
+```
+
+**When to use**: High-volume logging, expensive serialization, performance-critical paths.
+
+---
+
+## Pattern: Error Handling
+**Tags**: `#errors`, `#resilience`, `#graceful-degradation`
+
+Logger continues despite receiver failures (built-in).
+
+```{r eval=FALSE}
+failing_receiver <- receiver(function(event) {
+  stop("Simulated failure")
+})
+
+log_this <- logger() %>%
+  with_receivers(
+    to_console(),
+    failing_receiver(),
+    to_text_file("app.log")
+  )
+
+log_this(NOTE("Test message"))
+# → Appears in console and app.log
+# → Error logged: "[ERROR] Receiver #2 failed: Simulated failure"
+```
+
+**When to use**: Always! This is built-in behavior ensuring reliability.
+
+---
+
+## Pattern: Custom Log Level
+**Tags**: `#custom-level`, `#audit`, `#domain-specific`
+
+Create application-specific log levels.
+
+```{r eval=FALSE}
+# Define between existing levels based on severity
+AUDIT <- log_event_level("AUDIT", 35)  # Between NOTE(30) and MESSAGE(40)
+
+log_this <- logger() %>%
+  with_receivers(to_text_file("audit.log"))
+
+log_this(AUDIT("User accessed sensitive data",
+               user_id = 789,
+               resource = "customer_pii",
+               action = "read"))
+```
+
+**When to use**: Compliance logging, business events, domain-specific severity.
+
+---
+
+## Pattern: Production vs. Development
+**Tags**: `#environment`, `#production`, `#development`, `#configuration`
+
+Different logging for different environments.
+
+```{r eval=FALSE}
+if (Sys.getenv("ENVIRONMENT") == "production") {
+  log_this <- logger() %>%
+    with_receivers(
+      to_json() %>%
+        on_s3(bucket = "prod-logs",
+              key = "app.jsonl",
+              region = "us-east-1")
+    ) %>%
+    with_limits(lower = WARNING)
+} else {
+  log_this <- logger() %>%
+    with_receivers(
+      to_console(),
+      to_text_file("debug.log")
+    ) %>%
+    with_limits(lower = DEBUG)
+}
+```
+
+**When to use**: Environment-specific behavior, reduce production noise, local debugging.
+
+---
+
+## Pattern: Disable Logging (Performance)
+**Tags**: `#performance`, `#production`, `#optimization`, `#void`
+
+Zero-overhead logging for production.
+
+```{r eval=FALSE}
+if (Sys.getenv("ENABLE_LOGGING") == "false") {
+  log_this <- void_logger()
+} else {
+  log_this <- logger() %>%
+    with_receivers(to_console())
+}
+
+# Logging calls have no effect with void_logger()
+log_this(TRACE("Very verbose"))
+log_this(DEBUG("Debug info"))
+```
+
+**When to use**: Performance-critical production systems, A/B testing logging overhead.
+
+---
+
+## Pattern: Config-Driven Setup
+**Tags**: `#configuration`, `#config-package`, `#yaml`, `#environments`
+
+Configure logging via YAML (using `config` package).
+
+```{r eval=FALSE}
+# config.yml
+# default:
+#   logging:
+#     min_level: DEBUG
+#     receivers:
+#       - console: true
+#       - file:
+#           path: "app.log"
+# production:
+#   logging:
+#     min_level: WARNING
+#     receivers:
+#       - s3:
+#           bucket: "prod-logs"
+#           key: "app.jsonl"
+
+setup_logger_from_config <- function() {
+  cfg <- config::get()
+
+  log <- logger()
+  receivers <- list()
+
+  for (recv_cfg in cfg$logging$receivers) {
+    if (!is.null(recv_cfg$console)) {
+      receivers <- c(receivers, list(to_console()))
+    }
+    if (!is.null(recv_cfg$file)) {
+      receivers <- c(receivers, list(to_text_file(recv_cfg$file$path)))
+    }
+    if (!is.null(recv_cfg$s3)) {
+      receivers <- c(receivers,
+                     list(to_json() %>%
+                            on_s3(bucket = recv_cfg$s3$bucket,
+                                  key = recv_cfg$s3$key)))
+    }
+  }
+
+  log %>%
+    with_receivers(!!!receivers) %>%
+    with_limits(lower = get(cfg$logging$min_level))
+}
+
+log_this <- setup_logger_from_config()
+```
+
+**When to use**: Multi-environment deployments, centralized configuration, team standards.
+
+---
+
+## Pattern: Batch Processing with Checkpoints
+**Tags**: `#batch`, `#checkpoint`, `#progress`, `#long-running`
+
+Log progress in batch jobs.
+
+```{r eval=FALSE}
+log_this <- logger() %>%
+  with_receivers(
+    to_console(),
+    to_json_file("batch_progress.jsonl")
+  )
+
+process_batch <- function(items) {
+  total <- length(items)
+  log_this(NOTE("Batch started", total_items = total))
+
+  for (i in seq_along(items)) {
+    # Process item
+    result <- process_item(items[[i]])
+
+    # Log every 100 items
+    if (i %% 100 == 0) {
+      log_this(NOTE("Progress checkpoint",
+                    processed = i,
+                    total = total,
+                    percent = round(i / total * 100, 1)))
+    }
+
+    # Log errors
+    if (is.error(result)) {
+      log_this(ERROR("Item processing failed",
+                     item_id = items[[i]]$id,
+                     error = result$message))
+    }
+  }
+
+  log_this(NOTE("Batch complete", total_items = total))
+}
+```
+
+**When to use**: Long-running jobs, progress monitoring, resumable processing.
+
+---
+
+## Pattern: Request Tracing
+**Tags**: `#tracing`, `#request-id`, `#distributed`, `#tags`
+
+Trace requests through system with request ID.
+
+```{r eval=FALSE}
+handle_request <- function(request) {
+  request_id <- request$headers$`X-Request-ID` %||% generate_id()
+
+  # Create request-specific logger
+  req_log <- logger() %>%
+    with_receivers(
+      to_console(),
+      to_json() %>%
+        on_s3(bucket = "request-logs",
+              key = paste0("requests/", Sys.Date(), ".jsonl"))
+    ) %>%
+    with_tags("api", request_id)
+
+  req_log(NOTE("Request received",
+               method = request$method,
+               path = request$path))
+
+  # Pass logger to downstream functions
+  result <- process_request(request, req_log)
+
+  req_log(NOTE("Request complete",
+               status = result$status,
+               duration_ms = result$duration))
+
+  result
+}
+
+# All events for this request have the request_id tag
+```
+
+**When to use**: APIs, microservices, distributed tracing, request debugging.
+
+---
+
+## Pattern: Security Event Logging
+**Tags**: `#security`, `#audit`, `#compliance`, `#custom-level`
+
+Specialized logging for security events.
+
+```{r eval=FALSE}
+# Define security levels
+SEC_INFO <- log_event_level("SEC_INFO", 45)
+SEC_ALERT <- log_event_level("SEC_ALERT", 70)
+SEC_BREACH <- log_event_level("SEC_BREACH", 95)
+
+sec_logger <- logger() %>%
+  with_receivers(
+    # Console: Alerts and breaches only
+    to_console(lower = SEC_ALERT),
+
+    # Secure file: All security events
+    to_json_file("security.jsonl", lower = SEC_INFO),
+
+    # Immutable archive: Breaches only
+    to_json() %>%
+      on_s3(bucket = "security-archive",
+            key = "breaches.jsonl",
+            lower = SEC_BREACH)
+  ) %>%
+  with_tags("security")
+
+# Usage
+sec_logger(SEC_INFO("Login attempt", user_id = 123, success = TRUE))
+sec_logger(SEC_ALERT("Multiple failures", user_id = 456, attempts = 5))
+sec_logger(SEC_BREACH("Unauthorized access", user_id = 789))
+```
+
+**When to use**: Security compliance, intrusion detection, audit trails.
+
+---
+
+## Pattern: Performance Monitoring
+**Tags**: `#performance`, `#metrics`, `#timing`, `#custom-level`
+
+Log performance metrics with custom levels.
+
+```{r eval=FALSE}
+PERF <- log_event_level("PERF", 38)
+
+perf_logger <- logger() %>%
+  with_receivers(
+    to_json() %>%
+      on_s3(bucket = "metrics",
+            key = "performance.jsonl")
+  ) %>%
+  with_tags("performance")
+
+timed_operation <- function(op_name, expr) {
+  start <- Sys.time()
+  result <- expr
+  duration_ms <- as.numeric(difftime(Sys.time(), start, units = "secs")) * 1000
+
+  perf_logger(PERF("Operation complete",
+                   operation = op_name,
+                   duration_ms = duration_ms))
+
+  result
+}
+
+# Usage
+result <- timed_operation("database_query", {
+  # ... expensive operation ...
+})
+```
+
+**When to use**: Performance analysis, SLA monitoring, optimization.
+
+---
+
+## Pattern Index
+
+| Pattern | Tags | Section |
+|---------|------|---------|
+| Basic Logging | `#basic`, `#console` | [Link](#pattern-basic-logging) |
+| Multi-Destination | `#multi-destination`, `#console`, `#file`, `#s3` | [Link](#pattern-multi-destination-logging) |
+| Tiered Filtering | `#filtering`, `#levels`, `#performance` | [Link](#pattern-tiered-filtering) |
+| File Rotation | `#file`, `#rotation`, `#disk-management` | [Link](#pattern-file-rotation) |
+| Tagged Events | `#tagging`, `#categorization` | [Link](#pattern-tagged-events) |
+| Custom Fields | `#custom-fields`, `#context`, `#structured` | [Link](#pattern-custom-fields) |
+| Custom Template | `#formatting`, `#template` | [Link](#pattern-custom-template) |
+| Scope Enhancement | `#scope`, `#immutability` | [Link](#pattern-scope-based-enhancement) |
+| Pipeline Logging | `#pipeline`, `#dplyr`, `#chaining` | [Link](#pattern-pipeline-logging) |
+| Conditional Logging | `#conditional`, `#performance` | [Link](#pattern-conditional-logging) |
+| Error Handling | `#errors`, `#resilience` | [Link](#pattern-error-handling) |
+| Custom Level | `#custom-level`, `#domain-specific` | [Link](#pattern-custom-log-level) |
+| Prod vs Dev | `#environment`, `#configuration` | [Link](#pattern-production-vs-development) |
+| Disable Logging | `#performance`, `#void` | [Link](#pattern-disable-logging-performance) |
+| Config-Driven | `#configuration`, `#yaml` | [Link](#pattern-config-driven-setup) |
+| Batch Processing | `#batch`, `#checkpoint`, `#progress` | [Link](#pattern-batch-processing-with-checkpoints) |
+| Request Tracing | `#tracing`, `#request-id`, `#distributed` | [Link](#pattern-request-tracing) |
+| Security Events | `#security`, `#audit`, `#compliance` | [Link](#pattern-security-event-logging) |
+| Performance Monitoring | `#performance`, `#metrics`, `#timing` | [Link](#pattern-performance-monitoring) |
+
+---
+
+## See Also
+
+- [Getting Started](getting-started.html) - Basic usage guide
+- [Tagging and Provenance](tagging-and-provenance.html) - Deep dive on tagging
+- `.claude/use-cases.md` - Detailed use case mappings
+- `.claude/decision-tree.md` - Decision tree for common tasks

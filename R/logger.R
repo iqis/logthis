@@ -6,6 +6,12 @@
 #' @return logger; <logger>
 #' @export
 #'
+#' @section Type Contract:
+#' ```
+#' logger() -> logger
+#'   where logger = function(log_event, ...) -> log_event
+#' ```
+#'
 #' @examples
 #'
 #' # Basic logger
@@ -113,8 +119,8 @@ void_logger <- function(){
 
 #' Add receivers to a logger
 #'
-#' Adds one or more receivers to a logger. Receivers determine where log events 
-#' are sent (console, files, alerts, etc.). When append=TRUE (default), new 
+#' Adds one or more receivers to a logger. Receivers determine where log events
+#' are sent (console, files, alerts, etc.). When append=TRUE (default), new
 #' receivers are added to existing ones, enabling incremental logger composition.
 #'
 #' @param logger a logger; <logger>
@@ -123,6 +129,12 @@ void_logger <- function(){
 #'
 #' @return logger; <logger>
 #' @export
+#'
+#' @section Type Contract:
+#' ```
+#' with_receivers(logger, ...: log_receiver | log_formatter, append: logical = TRUE) -> logger
+#'   Formatters auto-convert to receivers
+#' ```
 #'
 #' @examples
 #'
@@ -149,7 +161,9 @@ void_logger <- function(){
 #'
 with_receivers <- function(logger, ..., append = TRUE){
   if (!inherits(logger, "logger")) {
-    stop("Argument `logger` must be of type 'logger'. ")
+    stop("Argument `logger` must be of type 'logger'.\n",
+         "  Solution: Create a logger first with logger() or void_logger()\n",
+         "  Example: log_this <- logger() %>% with_receivers(to_console())")
   }
 
   # Capture the original calls to the receivers
@@ -170,7 +184,11 @@ with_receivers <- function(logger, ..., append = TRUE){
                               # Already a receiver
                               x
                             } else {
-                              stop("Arguments must be log_receiver or log_formatter (from to_text() %>% on_*())")
+                              stop("Arguments must be log_receiver or log_formatter.\n",
+                                   "  Got: ", class(x)[1], "\n",
+                                   "  Solution: Use receiver functions like to_console(), to_text_file(), etc.\n",
+                                   "  Or: Create formatted receiver with to_text() %>% on_local() pattern\n",
+                                   "  See: .claude/use-cases.md for examples")
                             }
                           })
 
@@ -215,7 +233,7 @@ with_limits <- function(x, lower, upper, ...){
 #' Sets filtering limits at the logger level. Events with level numbers outside
 #' these bounds are dropped entirely before reaching any receivers. This is the
 #' first level of filtering - receiver-level filtering happens second.
-#' 
+#'
 #' Limits are inclusive: events with level_number >= lower AND <= upper
 #' will be processed by the logger.
 #'
@@ -231,6 +249,12 @@ with_limits <- function(x, lower, upper, ...){
 #'
 #' @return logger; <logger>
 #' @export
+#'
+#' @section Type Contract:
+#' ```
+#' with_limits.logger(logger, lower: numeric | log_event_level = LOWEST,
+#'                    upper: numeric | log_event_level = HIGHEST, ...) -> logger
+#' ```
 #'
 #' @examples
 #' # Logger-level filtering: only WARNING and ERROR events processed (inclusive)
@@ -259,14 +283,20 @@ with_limits.logger <- function(x, lower = LOWEST, upper = HIGHEST, ...){
   # guard limit values & apply to config if not null
   if (!is.null(lower)) {
     if (lower < 0 | lower > 99) {
-      stop(glue::glue("Lower limit must be in [0, 99], got {lower}"))
+      stop(glue::glue("Lower limit must be in [0, 99], got {lower}\n",
+                      "  Solution: Use standard levels like LOWEST(0), TRACE(10), DEBUG(20), NOTE(30), etc.\n",
+                      "  Or: Use numeric value in range [0, 99]\n",
+                      "  See: R/log_event_levels.R for standard levels"))
     }
     config$limits$lower <- lower
   }
 
   if (!is.null(upper)) {
     if (upper < 1 | upper > 100) {
-      stop(glue::glue("Upper limit must be in [1, 100], got {upper}"))
+      stop(glue::glue("Upper limit must be in [1, 100], got {upper}\n",
+                      "  Solution: Use standard levels like ERROR(80), CRITICAL(90), HIGHEST(100)\n",
+                      "  Or: Use numeric value in range [1, 100]\n",
+                      "  See: R/log_event_levels.R for standard levels"))
     }
     config$limits$upper <- upper
   }
@@ -396,6 +426,13 @@ with_limits.log_formatter <- function(formatter,
 #'
 #' @return The tagged object (same type as input)
 #' @export
+#'
+#' @section Type Contract:
+#' ```
+#' with_tags.log_event(log_event, ...: character, append: logical = TRUE) -> log_event
+#' with_tags.log_event_level(log_event_level, ...: character, append: logical = TRUE) -> log_event_level
+#' with_tags.logger(logger, ...: character, append: logical = TRUE) -> logger
+#' ```
 #'
 #' @examples
 #' # Tag individual events

@@ -1,0 +1,133 @@
+%% logthis Concept Graph
+%% Mermaid diagram showing relationships between all major concepts
+%% View at: https://mermaid.live/ or with Mermaid CLI
+
+graph TB
+    %% Core Event Concepts
+    LogEvent["log_event<br/>(Immutable Event Data)"]
+    EventLevel["log_event_level<br/>(Level Factory)"]
+    StandardLevels["Standard Levels<br/>TRACE, DEBUG, NOTE,<br/>MESSAGE, WARNING,<br/>ERROR, CRITICAL"]
+    CustomLevel["Custom Levels<br/>(User-defined)"]
+
+    %% Event Fields
+    EventFields["Event Fields<br/>time, level_class,<br/>level_number, message,<br/>tags, custom fields"]
+
+    %% Formatting Layer
+    Formatter["log_formatter<br/>(Transforms event → string)"]
+    ToText["to_text()<br/>(Template-based formatting)"]
+    ToJson["to_json()<br/>(JSON/JSONL formatting)"]
+    CustomFormatter["Custom Formatters<br/>(CSV, XML, etc.)"]
+
+    %% Template Variables
+    TemplateVars["Template Variables<br/>{time}, {level}, {message},<br/>{tags}, {custom_fields}"]
+
+    %% Handler Layer
+    Handler["Handler<br/>(Enriches formatter with storage)"]
+    OnLocal["on_local()<br/>(Local filesystem)"]
+    OnS3["on_s3()<br/>(AWS S3)"]
+    OnAzure["on_azure()<br/>(Azure Blob)"]
+    CustomHandler["Custom Handlers<br/>(Database, webhook, etc.)"]
+
+    %% Receiver Layer
+    Receiver["log_receiver<br/>(Complete logging endpoint)"]
+    ConvenienceReceivers["Convenience Receivers<br/>to_console(), to_identity(),<br/>to_void(), to_text_file(),<br/>to_json_file()"]
+    ComposedReceiver["Composed Receiver<br/>(formatter + handler)"]
+    CustomReceiver["Custom Receiver<br/>(Standalone)"]
+
+    %% Logger Layer
+    Logger["logger<br/>(Orchestrates event dispatch)"]
+    VoidLogger["void_logger<br/>(No-op for performance)"]
+
+    %% Configuration Concepts
+    LoggerConfig["Logger Config<br/>receivers, limits,<br/>tags, labels"]
+    Limits["Level Limits<br/>(lower, upper)"]
+    GlobalTags["Global Tags<br/>(Applied to all events)"]
+    ReceiverLabels["Receiver Labels<br/>(Provenance for errors)"]
+
+    %% Operations
+    WithReceivers["with_receivers()<br/>(Add/replace receivers)"]
+    WithLimits["with_limits()<br/>(Set level filtering)"]
+    WithTags["with_tags()<br/>(Add global tags)"]
+
+    %% File Rotation
+    FileRotation["File Rotation<br/>(Size-based rotation)"]
+
+    %% Error Handling
+    ErrorHandling["Error Handling<br/>(Graceful degradation)"]
+
+    %% Relationships
+
+    %% Event Creation
+    EventLevel -->|"creates"| StandardLevels
+    EventLevel -->|"creates"| CustomLevel
+    StandardLevels -->|"constructor for"| LogEvent
+    CustomLevel -->|"constructor for"| LogEvent
+    LogEvent -->|"contains"| EventFields
+
+    %% Formatting
+    LogEvent -->|"consumed by"| Formatter
+    Formatter -->|"is-a"| ToText
+    Formatter -->|"is-a"| ToJson
+    Formatter -->|"is-a"| CustomFormatter
+    ToText -->|"uses"| TemplateVars
+    EventFields -->|"provides"| TemplateVars
+
+    %% Handler Enrichment
+    Formatter -->|"enriched by"| Handler
+    Handler -->|"is-a"| OnLocal
+    Handler -->|"is-a"| OnS3
+    Handler -->|"is-a"| OnAzure
+    Handler -->|"is-a"| CustomHandler
+    OnLocal -->|"supports"| FileRotation
+
+    %% Receiver Composition
+    Formatter -->|"converts to"| Receiver
+    Handler -->|"enables"| ComposedReceiver
+    ComposedReceiver -->|"is-a"| Receiver
+    ConvenienceReceivers -->|"is-a"| Receiver
+    CustomReceiver -->|"is-a"| Receiver
+
+    %% Logger Configuration
+    Logger -->|"has"| LoggerConfig
+    LoggerConfig -->|"contains"| Receiver
+    LoggerConfig -->|"contains"| Limits
+    LoggerConfig -->|"contains"| GlobalTags
+    LoggerConfig -->|"contains"| ReceiverLabels
+
+    %% Logger Operations
+    WithReceivers -->|"modifies"| Logger
+    WithLimits -->|"modifies"| Logger
+    WithTags -->|"modifies"| Logger
+    Receiver -->|"added via"| WithReceivers
+    Limits -->|"set via"| WithLimits
+    GlobalTags -->|"set via"| WithTags
+
+    %% Event Dispatch
+    Logger -->|"dispatches"| LogEvent
+    LogEvent -->|"sent to"| Receiver
+    Logger -->|"implements"| ErrorHandling
+
+    %% Filtering
+    Limits -->|"filters at"| Logger
+    Limits -->|"filters at"| Receiver
+    Limits -->|"filters at"| Formatter
+
+    %% Special Loggers
+    VoidLogger -->|"variant of"| Logger
+
+    %% Styling
+    classDef coreClass fill:#e1f5ff,stroke:#01579b,stroke-width:2px
+    classDef factoryClass fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef formatClass fill:#fff9c4,stroke:#f57f17,stroke-width:2px
+    classDef handlerClass fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef receiverClass fill:#ffe0b2,stroke:#e65100,stroke-width:2px
+    classDef loggerClass fill:#ffebee,stroke:#b71c1c,stroke-width:2px
+    classDef opClass fill:#e0e0e0,stroke:#424242,stroke-width:2px
+
+    class LogEvent,EventFields coreClass
+    class EventLevel,StandardLevels,CustomLevel factoryClass
+    class Formatter,ToText,ToJson,CustomFormatter,TemplateVars formatClass
+    class Handler,OnLocal,OnS3,OnAzure,CustomHandler,FileRotation handlerClass
+    class Receiver,ConvenienceReceivers,ComposedReceiver,CustomReceiver receiverClass
+    class Logger,VoidLogger,LoggerConfig,Limits,GlobalTags,ReceiverLabels,ErrorHandling loggerClass
+    class WithReceivers,WithLimits,WithTags opClass

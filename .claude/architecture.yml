@@ -1,0 +1,324 @@
+# logthis Architecture Map
+# Machine-parseable component structure for AI navigation
+
+version: "1.0"
+package: logthis
+
+# Core Concepts
+concepts:
+  - name: log_event
+    description: Immutable data structure representing a single logging event
+    file: R/log_events.R
+    key_fields:
+      - time: timestamp
+      - level_class: string (e.g., "NOTE", "ERROR")
+      - level_number: integer (0-100)
+      - message: string
+      - tags: character vector (optional)
+      - "...": custom fields (any additional data)
+
+  - name: log_event_level
+    description: Factory for creating event constructor functions
+    file: R/log_event_levels.R
+    levels:
+      - LOWEST: 0 (virtual boundary, filtering only)
+      - TRACE: 10 (ultra-verbose debugging)
+      - DEBUG: 20 (debugging information)
+      - NOTE: 30 (notable events, not just debugging)
+      - MESSAGE: 40 (general informational messages)
+      - WARNING: 60 (warning conditions)
+      - ERROR: 80 (error conditions)
+      - CRITICAL: 90 (critical conditions)
+      - HIGHEST: 100 (virtual boundary, filtering only)
+
+  - name: log_formatter
+    description: Transforms log_event into string format (text, JSON, etc.)
+    file: R/receivers.R
+    functions:
+      - to_text: text formatting with template variables
+      - to_json: JSON/JSONL formatting
+    template_variables:
+      - time: event timestamp
+      - level: level name (e.g., "NOTE")
+      - level_number: level number (0-100)
+      - message: event message
+      - tags: formatted tag string
+      - "...": any custom event fields
+
+  - name: handler
+    description: Enriches formatter with storage destination (WHERE formatted output goes)
+    file: R/receivers.R
+    functions:
+      - on_local: local filesystem with rotation support
+      - on_s3: AWS S3 storage
+      - on_azure: Azure Blob Storage
+
+  - name: log_receiver
+    description: Complete logging endpoint (formatter + handler)
+    file: R/receivers.R
+    creation_patterns:
+      - direct: to_console(), to_identity(), to_void()
+      - composition: to_text() %>% on_local("file.log")
+      - auto_convert: with_receivers() auto-converts formatters
+
+  - name: logger
+    description: Orchestrates event dispatch to multiple receivers with filtering
+    file: R/logger.R
+    configuration:
+      - receivers: list of log_receiver functions
+      - limits: level filtering (lower, upper)
+      - tags: global tags attached to all events
+      - receiver_labels: provenance for error reporting
+
+# Component Relationships
+relationships:
+  - source: log_event
+    target: log_receiver
+    type: "input"
+    description: "Receivers consume events"
+
+  - source: log_formatter
+    target: log_receiver
+    type: "composition"
+    description: "Formatter + handler = receiver"
+
+  - source: handler
+    target: log_formatter
+    type: "enrichment"
+    description: "Handler enriches formatter with backend config"
+
+  - source: log_receiver
+    target: logger
+    type: "aggregation"
+    description: "Logger dispatches to multiple receivers"
+
+  - source: log_event_level
+    target: log_event
+    type: "factory"
+    description: "Level constructors create events"
+
+# File Map
+files:
+  core:
+    - path: R/log_events.R
+      components:
+        - log_event: factory for creating events
+        - as_log_event: coercion function
+      exports: [log_event, as_log_event]
+
+    - path: R/log_event_levels.R
+      components:
+        - log_event_level: factory for level constructors
+        - standard_levels: LOWEST, TRACE, DEBUG, NOTE, MESSAGE, WARNING, ERROR, CRITICAL, HIGHEST
+      exports: [log_event_level, LOWEST, TRACE, DEBUG, NOTE, MESSAGE, WARNING, ERROR, CRITICAL, HIGHEST]
+
+    - path: R/receivers.R
+      components:
+        - receiver: base receiver constructor
+        - formatter: base formatter constructor
+        - formatters: [to_text, to_json]
+        - handlers: [on_local, on_s3, on_azure]
+        - convenience_receivers: [to_console, to_identity, to_void, to_text_file, to_json_file]
+        - internal: [.formatter_to_receiver, .build_local_receiver, .build_s3_receiver, .build_azure_receiver, .rotate_file]
+      exports: [receiver, formatter, to_text, to_json, on_local, on_s3, on_azure, to_console, to_identity, to_void, to_text_file, to_json_file, with_limits.log_receiver, with_limits.log_formatter]
+
+    - path: R/logger.R
+      components:
+        - logger: main logger constructor
+        - void_logger: no-op logger for performance
+        - with_receivers: add/replace receivers
+        - with_limits: set level filtering
+        - with_tags: add global tags
+      exports: [logger, void_logger, with_receivers, with_limits, with_limits.logger, with_tags]
+
+  utilities:
+    - path: R/aaa.R
+      components:
+        - .LEVEL_COLOR_MAP: color mapping for console output
+        - color_level: apply color to level name
+      exports: []
+
+  package:
+    - path: R/logthis-package.R
+      components:
+        - package_documentation: roxygen2 package docs
+      exports: []
+
+# Common Workflows
+workflows:
+  - name: basic_logging
+    description: Create logger and log events
+    steps:
+      - create_logger: "logger()"
+      - add_receiver: "with_receivers(to_console())"
+      - log_event: "log_this(NOTE('message'))"
+    example: |
+      log_this <- logger() %>%
+        with_receivers(to_console())
+      log_this(NOTE("Hello, world!"))
+
+  - name: multi_destination_logging
+    description: Log to multiple destinations simultaneously
+    steps:
+      - create_logger: "logger()"
+      - add_multiple_receivers: "with_receivers(receiver1, receiver2, ...)"
+      - log_event: "log_this(event)"
+    example: |
+      log_this <- logger() %>%
+        with_receivers(
+          to_console(),
+          to_text() %>% on_local("app.log"),
+          to_json() %>% on_s3("bucket", "key")
+        )
+      log_this(ERROR("Something failed"))
+
+  - name: level_filtering
+    description: Filter events by level at logger or receiver level
+    steps:
+      - logger_level_filter: "with_limits(lower = WARNING, upper = HIGHEST)"
+      - receiver_level_filter: "to_console(lower = ERROR)"
+    example: |
+      # Logger-level: only WARNING+ pass to any receiver
+      log_this <- logger() %>%
+        with_receivers(to_console()) %>%
+        with_limits(lower = WARNING, upper = HIGHEST)
+
+      # Receiver-level: console only shows ERROR+
+      log_this <- logger() %>%
+        with_receivers(
+          to_console(lower = ERROR),  # only ERROR+
+          to_text_file("all.log")     # all levels
+        )
+
+  - name: custom_formatting
+    description: Create custom text format with template variables
+    steps:
+      - create_formatter: "to_text(template)"
+      - attach_handler: "on_local(path)"
+      - add_to_logger: "with_receivers(formatter)"
+    example: |
+      log_this <- logger() %>%
+        with_receivers(
+          to_text("{time} [{level}:{level_number}] {tags} {message}") %>%
+            on_local("custom.log")
+        )
+
+  - name: tagging
+    description: Add tags to events for categorization
+    steps:
+      - global_tags: "with_tags('tag1', 'tag2')"
+      - event_tags: "NOTE('msg', tags = c('tag3'))"
+    example: |
+      log_this <- logger() %>%
+        with_receivers(to_console()) %>%
+        with_tags("api", "v2")
+      log_this(NOTE("Request received", tags = "auth"))
+      # Event has tags: ["api", "v2", "auth"]
+
+  - name: file_rotation
+    description: Rotate log files by size
+    steps:
+      - create_receiver: "to_text_file(path, max_size, max_files)"
+      - or_composition: "to_text() %>% on_local(path, max_size = ..., max_files = ...)"
+    example: |
+      log_this <- logger() %>%
+        with_receivers(
+          to_text_file(path = "app.log",
+                       max_size = 10485760,  # 10MB
+                       max_files = 5)
+        )
+
+  - name: cloud_storage
+    description: Send logs to cloud storage
+    steps:
+      - s3: "to_json() %>% on_s3(bucket, key)"
+      - azure: "to_json() %>% on_azure(container, blob)"
+    example: |
+      log_this <- logger() %>%
+        with_receivers(
+          to_json() %>%
+            on_s3(bucket = "prod-logs",
+                  key = "app/events.jsonl",
+                  region = "us-east-1")
+        )
+
+# Extension Points
+extension_points:
+  - name: custom_formatter
+    description: Create new output format (CSV, XML, etc.)
+    template_file: .claude/templates/custom-formatter.R
+    steps:
+      - define_formatter_function: "Create function that takes template/config"
+      - create_closure: "Return formatter(function(event) {...})"
+      - set_config_attribute: "Store format_type and config"
+      - return: "Return formatter with 'log_formatter' class"
+
+  - name: custom_handler
+    description: Add new storage destination (database, webhook, etc.)
+    template_file: .claude/templates/custom-handler.R
+    steps:
+      - define_handler_function: "Create on_xxx(formatter, ...)"
+      - validate_formatter: "Check inherits(formatter, 'log_formatter')"
+      - enrich_config: "Add backend and backend_config to formatter's config attribute"
+      - create_builder: "Create .build_xxx_receiver(formatter) internal function"
+      - return: "Return enriched formatter"
+
+  - name: custom_level
+    description: Define application-specific log level
+    template_file: .claude/templates/custom-level.R
+    steps:
+      - choose_number: "Pick number in 0-100 scale"
+      - create_level: "CUSTOM <- log_event_level('CUSTOM', number)"
+      - add_color: "Optionally extend .LEVEL_COLOR_MAP"
+
+  - name: custom_receiver
+    description: Create complete receiver without formatter/handler pattern
+    template_file: .claude/templates/custom-receiver.R
+    steps:
+      - define_constructor: "Create function returning receiver closure"
+      - create_closure: "receiver(function(event) {...})"
+      - set_limits: "Optionally support lower/upper parameters"
+      - return: "Return receiver with 'log_receiver' class"
+
+# Key Design Patterns
+design_patterns:
+  - name: closure_based_configuration
+    description: Configuration stored as attributes on closures
+    rationale: Immutable, functional style; easy to inspect
+
+  - name: multi_stage_enrichment
+    description: "Formatter + handler → receiver"
+    rationale: Separates format (HOW) from storage (WHERE)
+
+  - name: auto_conversion
+    description: with_receivers() converts formatters to receivers
+    rationale: User-friendly API; formatters work like receivers
+
+  - name: two_level_filtering
+    description: Filtering at both logger and receiver levels
+    rationale: Flexible control; avoid unnecessary formatting
+
+  - name: provenance_tracking
+    description: Store receiver_labels for error reporting
+    rationale: Debugging; identify which receiver failed
+
+  - name: graceful_degradation
+    description: Logger continues despite receiver failures
+    rationale: Reliability; one bad receiver doesn't break logging
+
+# Testing Strategy
+testing:
+  files:
+    - tests/testthat/test-log_events.R
+    - tests/testthat/test-log_event_levels.R
+    - tests/testthat/test-receivers.R
+    - tests/testthat/test-logger.R
+
+  key_test_areas:
+    - event_creation: Type validation, field preservation
+    - level_hierarchy: Numeric ordering, comparison operators
+    - receivers: Type correctness, output validation
+    - formatters: Template variable expansion, custom fields
+    - handlers: File rotation, cloud storage integration
+    - logger: Receiver dispatch, level filtering, error handling
+    - integration: Multi-receiver workflows, tagging, chaining
