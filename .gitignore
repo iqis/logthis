@@ -43,6 +43,9 @@ renv/staging/
 \#*\#
 .\#*
 
+# Scratch notes (track file but ignore changes)
+scratch.md
+
 # R session data
 .RData
 .Rhistory
