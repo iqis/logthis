@@ -606,6 +606,10 @@ to_identity <- function(){
   })
 }
 
+#' @rdname to_identity
+#' @export
+to_itself <- to_identity
+
 #' Void receiver that discards events
 #'
 #' A receiver that discards all log events by returning NULL invisibly.

@@ -152,7 +152,7 @@ to_my_receiver <- function(config_param = "default", lower = LOWEST(), upper = H
 
 ### Unit Test Strategy
 1. **Isolation:** Test each component independently
-2. **Testing Receivers:** Use `to_identity()` to capture events for inspection
+2. **Testing Receivers:** Use `to_itself()` (or `to_identity()`) to capture events for inspection
 3. **Shiny Receivers:** Document as untestable without session (acceptable coverage gap)
 4. **Error Handling:** Test receiver failures using custom failing receivers
 
@@ -172,7 +172,7 @@ covr::package_coverage()
 ```r
 test_that("descriptive test name", {
   # Setup
-  log_capture <- logger() %>% with_receivers(to_identity())
+  log_capture <- logger() %>% with_receivers(to_itself())
 
   # Execute
   result <- log_capture(WARNING("test message"))

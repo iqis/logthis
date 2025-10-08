@@ -179,7 +179,7 @@ to_notif(lower = NOTE, upper = WARNING)
 
 ```r
 # Identity receiver (returns event for inspection)
-to_identity()
+to_itself()  # Alias: to_identity()
 
 # Void receiver (discards all events)
 to_void()
@@ -672,13 +672,13 @@ test_that("function works with logging disabled", {
 
 ### Capturing Log Events for Testing
 
-Use `to_identity()` receiver to capture and inspect log events:
+Use `to_itself()` receiver to capture and inspect log events:
 
 ```r
 test_that("correct log events are generated", {
     # Create a logger that captures events
-    log_capture <- logger() %>% with_receivers(to_identity())
-    
+    log_capture <- logger() %>% with_receivers(to_itself())
+
     # Function that logs events
     process_data <- function(data) {
         if (nrow(data) == 0) {
@@ -686,12 +686,12 @@ test_that("correct log events are generated", {
         }
         log_capture(NOTE(paste("Processing", nrow(data), "records")))
     }
-    
+
     # Test with empty data
     empty_result <- process_data(data.frame())
     expect_equal(empty_result$level_class, "WARNING")
     expect_match(empty_result$message, "Empty dataset")
-    
+
     # Test with actual data
     data_result <- process_data(data.frame(x = 1:3))
     expect_equal(data_result$level_class, "NOTE")
@@ -707,14 +707,14 @@ Test that loggers are configured correctly:
 test_that("logger filters events correctly", {
     # Create logger with specific limits
     test_logger <- logger() %>%
-        with_receivers(to_identity()) %>%
+        with_receivers(to_itself()) %>%
         with_limits(lower = WARNING, upper = HIGHEST)
-    
+
     # Events below WARNING should be filtered out
     note_event <- NOTE("This should be filtered")
     result_note <- test_logger(note_event)
     expect_null(result_note)  # Filtered events return NULL
-    
+
     # Events at WARNING and above should pass through
     warn_event <- WARNING("This should pass")
     result_warn <- test_logger(warn_event)
@@ -755,15 +755,15 @@ Test that chaining works correctly:
 ```r
 test_that("logger chaining preserves events", {
     # Create loggers that capture events
-    log_first <- logger() %>% with_receivers(to_identity())
-    log_second <- logger() %>% with_receivers(to_identity())
-    
+    log_first <- logger() %>% with_receivers(to_itself())
+    log_second <- logger() %>% with_receivers(to_itself())
+
     # Chain them together
     original_event <- ERROR("Test message")
     final_result <- original_event %>%
         log_first() %>%
         log_second()
-    
+
     # Should return the original event unchanged
     expect_equal(final_result, original_event)
     expect_equal(final_result$message, "Test message")
@@ -821,18 +821,18 @@ test_that("multi-receiver logger works correctly", {
         captured_events <<- append(captured_events, list(event))
         return(event)
     }
-    
+
     multi_logger <- logger() %>%
         with_receivers(
             capture_receiver,
-            to_identity(),  # Pass-through
-            to_void()       # Discard
+            to_itself(),  # Pass-through
+            to_void()     # Discard
         )
-    
+
     # Send event through logger
     test_event <- WARNING("Multi-receiver test")
     result <- multi_logger(test_event)
-    
+
     # Verify all receivers processed the event
     expect_equal(length(captured_events), 1)
     expect_equal(captured_events[[1]]$message, "Multi-receiver test")

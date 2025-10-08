@@ -76,13 +76,13 @@ log_appender(appender_file("app.log"))
 
 **logthis:**
 ```r
-log <- logger() %>%
+log_this <- logger() %>%
   with_receivers(
     to_console(),
     to_text() %>% on_local("app.log")
   )
 
-log(NOTE("Application started"))
+log_this(NOTE("Application started"))
 ```
 
 **Advantages of logthis:**
@@ -99,13 +99,13 @@ log_threshold(INFO)
 
 **logthis:**
 ```r
-log <- logger() %>%
+log_this <- logger() %>%
   with_limits(lower = NOTE, upper = HIGHEST)
 ```
 
 **Per-receiver thresholds in logthis:**
 ```r
-log <- logger() %>%
+log_this <- logger() %>%
   with_receivers(
     to_console(lower = DEBUG),           # Console: all events
     to_text() %>% on_local("errors.log", lower = ERROR)  # File: errors only
@@ -124,7 +124,7 @@ log_layout(layout_glue_generator(
 
 **logthis:**
 ```r
-log <- logger() %>%
+log_this <- logger() %>%
   with_receivers(
     to_text(template = "{time} [{level}] {message}") %>% on_local("app.log")
   )
@@ -158,7 +158,7 @@ error(logger, "Database error")
 library(logthis)
 library(magrittr)
 
-log <- logger() %>%
+log_this <- logger() %>%
   with_limits(lower = NOTE) %>%
   with_receivers(
     to_console(),
@@ -191,7 +191,7 @@ logger <- logger(
 
 **logthis:**
 ```r
-log <- logger() %>%
+log_this <- logger() %>%
   with_receivers(
     to_text() %>% on_local("app.log", append = TRUE)
   )
@@ -199,7 +199,7 @@ log <- logger() %>%
 
 **File rotation in logthis:**
 ```r
-log <- logger() %>%
+log_this <- logger() %>%
   with_receivers(
     to_text() %>% on_local(
       "app.log",
@@ -223,7 +223,7 @@ logger <- logger(
 
 **logthis:**
 ```r
-log <- logger() %>%
+log_this <- logger() %>%
   with_receivers(
     to_text(template = "{time} [{level}] {message}") %>% on_local("app.log")
   )
@@ -274,7 +274,7 @@ flog.threshold(INFO)
 
 **logthis:**
 ```r
-log <- logger() %>%
+log_this <- logger() %>%
   with_limits(lower = NOTE) %>%
   with_receivers(
     to_text() %>% on_local("app.log")
@@ -291,7 +291,7 @@ flog.threshold(WARN, name = "my.package")
 
 **logthis (use tags instead):**
 ```r
-log <- logger() %>%
+log_this <- logger() %>%
   with_tags("my.package") %>%
   with_receivers(to_console())
 
@@ -308,7 +308,7 @@ flog.layout(layout.format('[~l] ~m'))
 
 **logthis:**
 ```r
-log <- logger() %>%
+log_this <- logger() %>%
   with_receivers(
     to_text(template = "[{level}] {message}") %>% on_local("app.log")
   )
@@ -346,14 +346,14 @@ library(logthis)
 library(magrittr)
 
 # Auto-init with 1 daemon
-log <- logger() %>%
+log_this <- logger() %>%
   with_receivers(
     to_text() %>% on_local("app.log") %>% as_async()
   )
 
 # Or daemon pool for high performance
 mirai::daemons(4)
-log <- logger() %>%
+log_this <- logger() %>%
   with_receivers(
     to_text() %>% on_local("app.log") %>% as_async(flush_threshold = 100),
     to_json() %>% on_s3("logs", "events") %>% as_async(flush_threshold = 1000)
@@ -375,7 +375,7 @@ for (i in 1:10000) {
 **Not available in other packages:**
 ```r
 # Logger-level tags
-log <- logger() %>%
+log_this <- logger() %>%
   with_tags("production", "api", "us-west-2") %>%
   with_receivers(to_console())
 
@@ -426,7 +426,7 @@ my_function <- function() {
 
 ```r
 # Microsoft Teams
-log <- logger() %>%
+log_this <- logger() %>%
   with_receivers(
     to_teams(
       webhook_url = Sys.getenv("TEAMS_WEBHOOK"),
@@ -436,7 +436,7 @@ log <- logger() %>%
   )
 
 # Syslog
-log <- logger() %>%
+log_this <- logger() %>%
   with_receivers(
     to_syslog(
       host = "syslog.example.com",
@@ -447,7 +447,7 @@ log <- logger() %>%
   )
 
 # Cloud storage
-log <- logger() %>%
+log_this <- logger() %>%
   with_receivers(
     to_json() %>% on_s3(
       bucket = "prod-logs",
@@ -457,7 +457,7 @@ log <- logger() %>%
   )
 
 # Parquet for analytics
-log <- logger() %>%
+log_this <- logger() %>%
   with_receivers(
     to_parquet() %>% on_local(
       "events.parquet",
@@ -470,7 +470,7 @@ log <- logger() %>%
 
 **More flexible than other packages:**
 ```r
-log <- logger() %>%
+log_this <- logger() %>%
   with_limits(lower = DEBUG, upper = HIGHEST) %>%  # Logger filter
   with_receivers(
     to_console(lower = NOTE),                      # Console: NOTE+
@@ -537,7 +537,7 @@ After:
 library(logthis)
 library(magrittr)
 
-log <- logger() %>%
+log_this <- logger() %>%
   with_limits(lower = NOTE) %>%
   with_receivers(
     to_text() %>% on_local("app.log")
@@ -589,7 +589,7 @@ log(NOTE("User login", user_id = 12345, ip = "192.168.1.100"))
 log <- log %>% with_tags("production", "api-v2")
 
 # Add async for performance
-log <- logger() %>%
+log_this <- logger() %>%
   with_receivers(
     to_text() %>% on_local("app.log") %>% as_async()
   )
@@ -625,7 +625,7 @@ flog.appender(appender.file("app.log"))
 
 **logthis:**
 ```r
-log <- logger() %>%
+log_this <- logger() %>%
   with_receivers(
     to_console(),
     to_text() %>% on_local("app.log")
@@ -639,7 +639,7 @@ log <- logger() %>%
 
 **logthis:**
 ```r
-log <- logger() %>%
+log_this <- logger() %>%
   with_receivers(
     to_console(lower = NOTE),                      # Console: all
     to_text() %>% on_local("errors.log", lower = ERROR),  # File: errors only
@@ -654,7 +654,7 @@ log <- logger() %>%
 
 **logthis:**
 ```r
-log <- logger() %>%
+log_this <- logger() %>%
   with_receivers(
     to_json() %>% on_local("events.jsonl")
   )
@@ -681,7 +681,7 @@ library(logthis)
 log_this(NOTE("Message"))
 
 # Or create custom logger
-my_log <- logger() %>% with_receivers(to_console())
+my_log_this <- logger() %>% with_receivers(to_console())
 my_log(NOTE("Message"))
 ```
 
@@ -690,7 +690,7 @@ my_log(NOTE("Message"))
 **Solution:** Check receiver configuration
 ```r
 # Ensure receiver is configured
-log <- logger() %>%
+log_this <- logger() %>%
   with_receivers(
     to_text() %>% on_local("app.log")  # Must specify on_local()
   )
@@ -707,12 +707,12 @@ readLines("app.log")
 **Solution:** Use async logging
 ```r
 # Synchronous (slow for high volume)
-log <- logger() %>% with_receivers(
+log_this <- logger() %>% with_receivers(
   to_text() %>% on_local("app.log")
 )
 
 # Asynchronous (fast)
-log <- logger() %>% with_receivers(
+log_this <- logger() %>% with_receivers(
   to_text() %>% on_local("app.log") %>% as_async()
 )
 ```

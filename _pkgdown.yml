@@ -27,8 +27,12 @@ navbar:
         href: articles/getting-started.html
       - text: Tagging and Provenance
         href: articles/tagging-and-provenance.html
-      - text: Advanced Usage
-        href: articles/advanced-usage.html
+      - text: Patterns
+        href: articles/patterns.html
+      - text: Advanced Receivers
+        href: articles/advanced-receivers.html
+      - text: Migration Guide
+        href: articles/migration-guide.html
     news:
       text: Changelog
       href: news/index.html
@@ -45,6 +49,10 @@ reference:
   - void_logger
   - with_receivers
   - with_limits
+  - with_tags
+  - flush
+  - get_receiver
+  - buffer_status
 
 - title: Event Levels
   desc: Predefined and custom log event levels
@@ -58,13 +66,41 @@ reference:
   - ERROR
   - HIGHEST
 
-- title: Receivers
-  desc: Output destinations for log events
+- title: Console & Display Receivers
+  desc: Output to console and user interfaces
   contents:
   - to_console
   - to_shinyalert
   - to_notif
+
+- title: Formatters
+  desc: Format log events for output
+  contents:
+  - to_text
+  - to_json
+  - to_csv
+  - to_parquet
+  - to_feather
+
+- title: Handlers
+  desc: Output destinations for formatted logs
+  contents:
+  - on_local
+  - on_s3
+  - on_azure
+  - on_webhook
+
+- title: Standalone Receivers
+  desc: Protocol-specific receivers
+  contents:
+  - to_teams
+  - to_syslog
+
+- title: Testing & Debugging Receivers
+  desc: Receivers for testing and development
+  contents:
   - to_identity
+  - to_itself
   - to_void
 
 - title: Utilities
@@ -83,10 +119,20 @@ articles:
   contents:
   - tagging-and-provenance
 
-- title: Advanced Usage
+- title: Patterns
   navbar: ~
   contents:
-  - advanced-usage
+  - patterns
+
+- title: Advanced Receivers
+  navbar: ~
+  contents:
+  - advanced-receivers
+
+- title: Migration Guide
+  navbar: ~
+  contents:
+  - migration-guide
 
 news:
   releases:
