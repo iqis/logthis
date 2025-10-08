@@ -6,7 +6,13 @@ RUN apt-get update && apt-get install -y \
     netcat-openbsd \
     curl \
     unzip \
+    sudo \
     && rm -rf /var/lib/apt/lists/*
+
+# Create vscode user with sudo privileges
+RUN useradd -m -s /bin/bash -u 1000 vscode \
+    && echo "vscode ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/vscode \
+    && chmod 0440 /etc/sudoers.d/vscode
 
 # Install AWS CLI v2
 RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" \
@@ -25,3 +31,9 @@ COPY renv/settings.json renv/settings.json
 
 # Restore the renv environment
 RUN R -e "renv::restore()"
+
+# Set up permissions for vscode user
+RUN chown -R vscode:vscode /usr/local/lib/R \
+    && mkdir -p /home/vscode/.local/share/renv \
+    && chown -R vscode:vscode /home/vscode
+
