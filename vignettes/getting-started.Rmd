@@ -40,19 +40,21 @@ log_this(ERROR("This is an error"))
 
 ## Understanding Event Levels
 
-`logthis` uses a hierarchical system with numeric levels from 0 to 120:
+`logthis` uses a hierarchical system with numeric levels from 0 to 100:
 
 - **LOWEST (0)** - Lowest priority debugging
-- **CHATTER (20)** - Verbose debugging output
-- **NOTE (40)** - General notes and information
-- **MESSAGE (60)** - Important messages
-- **WARNING (80)** - Warning conditions
-- **ERROR (100)** - Error conditions
-- **HIGHEST (120)** - Critical events
+- **TRACE (10)** - Trace-level debugging
+- **DEBUG (20)** - Verbose debugging output
+- **NOTE (30)** - General notes and information
+- **MESSAGE (40)** - Important messages
+- **WARNING (60)** - Warning conditions
+- **ERROR (80)** - Error conditions
+- **CRITICAL (90)** - Critical events
+- **HIGHEST (100)** - Highest priority
 
 ```{r event-levels}
 # Create events at different levels
-log_this(CHATTER("This is very detailed debug info"))
+log_this(DEBUG("This is very detailed debug info"))
 log_this(NOTE("Application started successfully"))
 log_this(MESSAGE("Processing 1000 records"))
 log_this(WARNING("Found 5 missing values"))
@@ -87,7 +89,7 @@ log_this <- logger() %>%
     with_receivers(to_console(lower = WARNING)) %>%
     with_limits(lower = NOTE, upper = HIGHEST)
 
-log_this(CHATTER("Blocked by logger"))      # Below logger limit  
+log_this(DEBUG("Blocked by logger"))      # Below logger limit
 log_this(NOTE("Blocked by receiver"))       # Passes logger, blocked by receiver
 log_this(WARNING("Reaches console"))        # Passes both filters
 ```
@@ -103,8 +105,8 @@ log_this <- logger() %>%
     ) %>%
     with_limits(lower = NOTE, upper = HIGHEST)  # Logger: notes and above
 
-# Events flow: CHATTER blocked by logger
-#              NOTE reaches audit receiver only  
+# Events flow: DEBUG blocked by logger
+#              NOTE reaches audit receiver only
 #              WARNING+ reaches both receivers
 ```
 

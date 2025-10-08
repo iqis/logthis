@@ -51,3 +51,8 @@ scratch.md
 .Rhistory
 /doc/
 /Meta/
+
+# Docker cloud testing infrastructure
+tests/cloud/localstack-data/
+tests/cloud/azurite-data/
+.localstack/

@@ -82,7 +82,7 @@ test_that("with_limits.log_receiver() validates limit ranges", {
   expect_error(recv %>% with_limits(upper = 101), "Upper limit must be in \\[1, 100\\]")
 })
 
-test_that("to_text_file() with rotation creates rotated files", {
+test_that("text file logging with rotation creates rotated files", {
   # Create a temporary directory for testing
   temp_dir <- tempdir()
   log_path <- file.path(temp_dir, "test_rotation.log")
@@ -91,7 +91,10 @@ test_that("to_text_file() with rotation creates rotated files", {
   unlink(paste0(log_path, "*"))
 
   # Create a file receiver with small max_size for testing (100 bytes)
-  file_recv <- to_text_file(path = log_path, max_size = 100, max_files = 3)
+  file_recv <- to_text() %>% on_local(path = log_path, max_size = 100, max_files = 3)
+
+  # Convert formatter to receiver
+  file_recv <- logthis:::.formatter_to_receiver(file_recv)
 
   # Write enough events to trigger rotation
   for (i in 1:10) {
@@ -110,7 +113,7 @@ test_that("to_text_file() with rotation creates rotated files", {
   unlink(rotated_files)
 })
 
-test_that("to_text_file() without rotation does not create rotated files", {
+test_that("text file logging without rotation does not create rotated files", {
   temp_dir <- tempdir()
   log_path <- file.path(temp_dir, "test_no_rotation.log")
 
@@ -118,7 +121,8 @@ test_that("to_text_file() without rotation does not create rotated files", {
   unlink(paste0(log_path, "*"))
 
   # Create a file receiver without rotation
-  file_recv <- to_text_file(path = log_path)
+  file_recv <- to_text() %>% on_local(path = log_path)
+  file_recv <- logthis:::.formatter_to_receiver(file_recv)
 
   # Write some events
   for (i in 1:5) {
@@ -177,7 +181,7 @@ test_that("receiver labels are captured correctly", {
   expect_equal(config$receiver_labels[[2]], "to_identity()")
 })
 
-test_that("to_text_file() supports file rotation by size", {
+test_that("text file logging supports file rotation by size", {
   temp_dir <- tempdir()
   log_path <- file.path(temp_dir, "rotate_test.log")
 
@@ -185,7 +189,7 @@ test_that("to_text_file() supports file rotation by size", {
   unlink(paste0(log_path, "*"))
 
   # Create receiver with 200 byte max size (small for testing)
-  file_recv <- to_text_file(path = log_path, append = TRUE, max_size = 200, max_files = 3)
+  file_recv <- to_text() %>% on_local(path = log_path, append = TRUE, max_size = 200, max_files = 3)
   log_test <- logger() %>% with_receivers(file_recv)
 
   # Write enough messages to trigger rotation
@@ -204,7 +208,7 @@ test_that("to_text_file() supports file rotation by size", {
   unlink(paste0(log_path, "*"))
 })
 
-test_that("to_text_file() rotation preserves correct order", {
+test_that("text file rotation preserves correct order", {
   temp_dir <- tempdir()
   log_path <- file.path(temp_dir, "order_test.log")
 
@@ -212,7 +216,7 @@ test_that("to_text_file() rotation preserves correct order", {
   unlink(paste0(log_path, "*"))
 
   # Create small file and force rotation
-  file_recv <- to_text_file(path = log_path, append = TRUE, max_size = 100, max_files = 3)
+  file_recv <- to_text() %>% on_local(path = log_path, append = TRUE, max_size = 100, max_files = 3)
   log_test <- logger() %>% with_receivers(file_recv)
 
   # First batch of messages
@@ -233,7 +237,7 @@ test_that("to_text_file() rotation preserves correct order", {
   unlink(paste0(log_path, "*"))
 })
 
-test_that("to_json_file() creates valid JSONL output", {
+test_that("JSON file logging creates valid JSONL output", {
   temp_dir <- tempdir()
   json_path <- file.path(temp_dir, "test.jsonl")
 
@@ -241,7 +245,7 @@ test_that("to_json_file() creates valid JSONL output", {
   unlink(json_path)
 
   # Create JSON receiver and log events
-  json_recv <- to_json_file(path = json_path)
+  json_recv <- to_json() %>% on_local(path = json_path)
   log_test <- logger() %>% with_receivers(json_recv) %>% with_tags("test", "warning")
 
   log_test(NOTE("First message"))
@@ -268,7 +272,7 @@ test_that("to_json_file() creates valid JSONL output", {
   unlink(json_path)
 })
 
-test_that("to_json_file() respects level limits", {
+test_that("JSON file logging respects level limits", {
   temp_dir <- tempdir()
   json_path <- file.path(temp_dir, "filtered.jsonl")
 
@@ -276,7 +280,7 @@ test_that("to_json_file() respects level limits", {
   unlink(json_path)
 
   # Create receiver that only logs WARNING and above
-  json_recv <- to_json_file(path = json_path, lower = WARNING)
+  json_recv <- to_json() %>% on_local(path = json_path) %>% with_limits(lower = WARNING)
   log_test <- logger() %>% with_receivers(json_recv)
 
   log_test(NOTE("Should be filtered"))
@@ -297,7 +301,7 @@ test_that("to_json_file() respects level limits", {
   unlink(json_path)
 })
 
-test_that("to_json_file() pretty printing works", {
+test_that("JSON file logging with pretty printing works", {
   temp_dir <- tempdir()
   json_path <- file.path(temp_dir, "pretty.json")
 
@@ -305,7 +309,7 @@ test_that("to_json_file() pretty printing works", {
   unlink(json_path)
 
   # Create receiver with pretty printing
-  json_recv <- to_json_file(path = json_path, pretty = TRUE)
+  json_recv <- to_json(pretty = TRUE) %>% on_local(path = json_path)
   log_test <- logger() %>% with_receivers(json_recv)
 
   log_test(NOTE("Test message"))
@@ -323,4 +327,84 @@ test_that("to_json_file() pretty printing works", {
 
   # Clean up
   unlink(json_path)
+})
+
+# ============================================================================
+# Cloud receiver tests (S3 and Azure)
+# ============================================================================
+
+test_that("on_s3() validates formatter input", {
+  expect_error(
+    on_s3("not a formatter", bucket = "test", key_prefix = "logs/app"),
+    "must be a log_formatter"
+  )
+
+  expect_error(
+    on_s3(to_identity(), bucket = "test", key_prefix = "logs/app"),
+    "must be a log_formatter"
+  )
+})
+
+test_that("on_s3() validates flush_threshold", {
+  fmt <- to_text()
+
+  expect_error(
+    on_s3(fmt, bucket = "test", key_prefix = "logs/app", flush_threshold = -1),
+    "must be a positive number"
+  )
+
+  expect_error(
+    on_s3(fmt, bucket = "test", key_prefix = "logs/app", flush_threshold = 0),
+    "must be a positive number"
+  )
+})
+
+test_that("on_s3() enriches formatter config", {
+  fmt <- to_text() %>%
+    on_s3(bucket = "my-bucket",
+          key_prefix = "logs/app",
+          region = "us-west-2",
+          flush_threshold = 50)
+
+  config <- attr(fmt, "config")
+
+  expect_equal(config$backend, "s3")
+  expect_equal(config$backend_config$bucket, "my-bucket")
+  expect_equal(config$backend_config$key_prefix, "logs/app")
+  expect_equal(config$backend_config$region, "us-west-2")
+  expect_equal(config$backend_config$flush_threshold, 50L)
+})
+
+test_that("on_azure() validates formatter input", {
+  expect_error(
+    on_azure("not a formatter", container = "logs", blob = "app.log", endpoint = NULL),
+    "must be a log_formatter"
+  )
+})
+
+test_that("on_azure() validates flush_threshold", {
+  fmt <- to_text()
+
+  expect_error(
+    on_azure(fmt, container = "logs", blob = "app.log", endpoint = NULL, flush_threshold = -1),
+    "must be a positive number"
+  )
+})
+
+test_that("on_azure() enriches formatter config", {
+  # Mock endpoint (just a list, won't actually use it)
+  mock_endpoint <- list(url = "https://test.blob.core.windows.net")
+
+  fmt <- to_text() %>%
+    on_azure(container = "logs",
+             blob = "app.log",
+             endpoint = mock_endpoint,
+             flush_threshold = 75)
+
+  config <- attr(fmt, "config")
+
+  expect_equal(config$backend, "azure")
+  expect_equal(config$backend_config$container, "logs")
+  expect_equal(config$backend_config$blob, "app.log")
+  expect_equal(config$backend_config$flush_threshold, 75L)
 })

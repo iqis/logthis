@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Rscript:*)",
+      "Bash(git add:*)",
+      "Bash(rm:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(cat:*)",
+      "Bash(R:*)",
+      "Bash(tee:*)",
+      "Bash(git reset:*)",
+      "Bash(chmod:*)",
+      "Bash(docker:*)",
+      "Bash(docker-compose:*)",
+      "Bash(_R_CHECK_FORCE_SUGGESTS_=false R CMD check --as-cran logthis_0.1.0.9000.tar.gz)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

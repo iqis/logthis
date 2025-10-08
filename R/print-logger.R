@@ -17,8 +17,19 @@ print.logger <- function(x, ...) {
   } else {
     cat("Receivers:\n")
 
-    if (!is.null(config$receiver_labels)) {
-      # Print the captured labels
+    # Prefer receiver names if available, otherwise use indices
+    if (!is.null(config$receiver_names) && length(config$receiver_names) > 0) {
+      # Use receiver names as labels
+      for (i in seq_along(config$receiver_names)) {
+        label_text <- if (!is.null(config$receiver_labels) && i <= length(config$receiver_labels)) {
+          config$receiver_labels[[i]]
+        } else {
+          class(config$receivers[[i]])[1]
+        }
+        cat("  [", config$receiver_names[i], "] ", label_text, "\n", sep = "")
+      }
+    } else if (!is.null(config$receiver_labels)) {
+      # Fallback to numeric indices
       for (i in seq_along(config$receiver_labels)) {
         cat("  [", i, "] ", config$receiver_labels[[i]], "\n", sep = "")
       }

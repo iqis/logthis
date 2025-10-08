@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  # LocalStack - AWS S3 emulation
+  localstack:
+    image: localstack/localstack:latest
+    container_name: logthis-localstack
+    ports:
+      - "4566:4566"  # LocalStack edge port
+    environment:
+      - SERVICES=s3
+      - DEBUG=1
+      - DATA_DIR=/tmp/localstack/data
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    volumes:
+      - "./localstack-data:/tmp/localstack"
+      - "/var/run/docker.sock:/var/run/docker.sock"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - logthis-test
+
+  # Azurite - Azure Blob Storage emulation
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:latest
+    container_name: logthis-azurite
+    ports:
+      - "10000:10000"  # Blob service
+    command: "azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --loose"
+    volumes:
+      - "./azurite-data:/data"
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "10000"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - logthis-test
+
+networks:
+  logthis-test:
+    driver: bridge

@@ -35,8 +35,50 @@ If you've found a bug, please file an issue that illustrates the bug with a mini
 
 *   We use [roxygen2](https://cran.r-project.org/package=roxygen2), with [Markdown syntax](https://cran.r-project.org/web/packages/roxygen2/vignettes/rd-formatting.html), for documentation.  
 
-*   We use [testthat](https://cran.r-project.org/package=testthat) for unit tests. 
-   Contributions with test cases included are easier to accept.  
+*   We use [testthat](https://cran.r-project.org/package=testthat) for unit tests.
+   Contributions with test cases included are easier to accept.
+
+### Testing Cloud Backends
+
+If you're contributing to S3 or Azure backend functionality, you can test locally using our Docker-based mock infrastructure:
+
+**Setup:**
+
+1. Ensure Docker and docker-compose are installed
+2. Start mock services:
+   ```bash
+   cd tests/cloud
+   ./start-services.sh
+   ```
+
+**Running Tests:**
+
+```r
+# Run all tests (cloud tests auto-skip if services unavailable)
+devtools::test()
+
+# Run only cloud tests
+devtools::test(filter = "cloud")
+
+# Run specific cloud backend tests
+devtools::test(filter = "cloud-s3")
+devtools::test(filter = "cloud-azure")
+```
+
+**Cleanup:**
+
+```bash
+cd tests/cloud
+./stop-services.sh --clean
+```
+
+**Test Guidelines:**
+
+- Cloud tests should skip gracefully if services unavailable (use `skip_if_not(cloud_test_config$check_s3())`)
+- All test utilities must live in `/tests/`, never in `/R/` (to avoid exporting test-only code)
+- Use `cloud_test_config$generate_test_key()` for unique test object names
+- Clean up test objects after each test (use `cloud_test_config$cleanup_*()` functions)
+- Don't commit docker data volumes (`localstack-data/`, `azurite-data/`)
 
 ## Code of Conduct
 

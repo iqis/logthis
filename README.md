@@ -108,10 +108,10 @@ Receivers determine where log events are sent. Multiple receivers can be attache
 to_console(lower = LOWEST, upper = HIGHEST)
 
 # File output - writes logs to text files
-to_text_file(path = "app.log", lower = LOWEST, upper = HIGHEST)
+to_text() %>% on_local(path = "app.log")
 
 # JSON file output - structured logging for log aggregation systems
-to_json_file(path = "app.jsonl", lower = LOWEST, upper = HIGHEST)
+to_json() %>% on_local(path = "app.jsonl")
 
 # Shiny alerts (for Shiny applications)
 to_shinyalert(lower = WARNING, upper = HIGHEST)
@@ -226,7 +226,7 @@ print(log_this)
 log_this <- logger() %>%
     with_receivers(
         to_console(lower = NOTE),        # Receiver filter: NOTE to HIGHEST (inclusive)
-        to_text_file(lower = ERROR)      # Receiver filter: ERROR to HIGHEST (inclusive)
+        to_text() %>% on_local(path = "app.log") %>% with_limits(lower = ERROR)  # Receiver filter: ERROR to HIGHEST (inclusive)
     ) %>%
     with_limits(lower = WARNING, upper = HIGHEST)  # Logger filter: WARNING to HIGHEST (inclusive)
 
@@ -250,7 +250,7 @@ log_this <- logger() %>%
 ```r
 # Each receiver can have its own filtering independent of logger limits
 console_receiver <- to_console(lower = TRACE, upper = WARNING)
-file_receiver <- to_text_file(lower = ERROR, upper = HIGHEST)
+file_receiver <- to_text() %>% on_local(path = "app.log") %>% with_limits(lower = ERROR, upper = HIGHEST)
 
 log_this <- logger() %>%
     with_receivers(console_receiver, file_receiver)
@@ -268,6 +268,51 @@ log_this <- log_this %>%
     with_receivers(to_shinyalert(), append = TRUE)
 ```
 
+### Named Receivers and Buffer Management
+
+Name your receivers for easier access and management:
+
+```r
+# Named receivers
+log_this <- logger() %>%
+  with_receivers(
+    console = to_console(),
+    local_file = to_text() %>% on_local(path = "app.log"),
+    s3 = to_json() %>% on_s3(bucket = "logs", key_prefix = "app")
+  )
+
+# Print shows names instead of indices
+print(log_this)
+#> <logger>
+#> Level limits: 0 to 100
+#> Receivers:
+#>   [console] to_console()
+#>   [local_file] to_text() %>% on_local(path = "app.log")
+#>   [s3] to_json() %>% on_s3(bucket = "logs", key_prefix = "app")
+
+# Get specific receiver by name
+s3_recv <- get_receiver(log_this, "s3")
+
+# Flush cloud receivers manually
+flush(log_this, receivers = "s3")      # Flush specific receiver
+flush(log_this)                        # Flush all buffered receivers
+
+# Check buffer status
+buffer_status(log_this)
+#>  console local_file         s3
+#>       NA         NA         42
+
+# Register automatic flush on program exit
+on.exit(flush(log_this), add = TRUE)
+```
+
+**Auto-naming:** Unnamed receivers get automatic names (`receiver_1`, `receiver_2`, etc.):
+
+```r
+log_this <- logger() %>%
+  with_receivers(to_console(), to_identity())  # Auto-named receiver_1, receiver_2
+```
+
 ## Logger Chaining and Composition
 
 `logthis` supports flexible logger composition through chaining and scope-based masking. Loggers return log events invisibly, enabling powerful patterns:
@@ -277,7 +322,7 @@ log_this <- log_this %>%
 ```r
 # Create specialized loggers for specific use cases
 log_this_console <- logger() %>% with_receivers(to_console())
-log_this_file <- logger() %>% with_receivers(to_text_file(path = "app.log"))
+log_this_file <- logger() %>% with_receivers(to_text() %>% on_local(path = "app.log"))
 log_this_alerts <- logger() %>% with_receivers(to_shinyalert(lower = ERROR))
 
 # Chain them together - event flows through all loggers
@@ -306,7 +351,7 @@ log_this <- logger() %>% with_receivers(to_console())
 process_sensitive_data <- function() {
     # Add audit logging in this scope only
     log_this <- log_this %>%
-        with_receivers(to_text_file(path = "audit.log"))
+        with_receivers(to_text() %>% on_local(path = "audit.log"))
     
     log_this(NOTE("Processing sensitive data"))
     log_this(MESSAGE("Data validation complete"))
@@ -335,7 +380,7 @@ create_logger <- function(env = "development") {
     
     if (env == "production") {
         log_this <- log_this %>%
-            with_receivers(to_text_file(path = "production.log")) %>%
+            with_receivers(to_text() %>% on_local(path = "production.log")) %>%
             with_limits(lower = WARNING, upper = HIGHEST)
     } else if (env == "development") {
         log_this <- log_this %>%
@@ -463,11 +508,11 @@ log_this <- logger() %>%
 
 # Component tagging for microservices
 log_database <- logger() %>%
-    with_receivers(to_text_file(path = "db.log")) %>%
+    with_receivers(to_text() %>% on_local(path = "db.log")) %>%
     with_tags("database", "postgres")
 
 log_cache <- logger() %>%
-    with_receivers(to_text_file(path = "cache.log")) %>%
+    with_receivers(to_text() %>% on_local(path = "cache.log")) %>%
     with_tags("cache", "redis")
 
 # Request-specific tagging
@@ -762,6 +807,57 @@ For detailed guides and advanced techniques:
 
 - **[Getting Started](vignettes/getting-started.Rmd)** - Basic setup and usage patterns
 - **[Tagging and Provenance](vignettes/tagging-and-provenance.Rmd)** - Track data lineage, execution context, and build audit trails with hierarchical tags
+
+## Development and Testing
+
+### Testing Cloud Backends
+
+To test S3 and Azure backends locally without requiring actual cloud accounts, we provide a Docker-based mock infrastructure using LocalStack (AWS S3) and Azurite (Azure Blob Storage).
+
+**Prerequisites:**
+- Docker and docker-compose installed
+- AWS CLI (for S3 bucket creation)
+
+**Start mock services:**
+
+```bash
+cd tests/cloud
+./start-services.sh
+```
+
+This will:
+- Start LocalStack on port 4566 (S3 API)
+- Start Azurite on port 10000 (Blob service)
+- Create test bucket/container
+
+**Run cloud integration tests:**
+
+```r
+# Run all cloud tests
+devtools::test(filter = "cloud")
+
+# Run only S3 tests
+devtools::test(filter = "cloud-s3")
+
+# Run only Azure tests
+devtools::test(filter = "cloud-azure")
+```
+
+**Stop mock services:**
+
+```bash
+cd tests/cloud
+./stop-services.sh
+
+# Or clean up data volumes:
+./stop-services.sh --clean
+```
+
+**Notes:**
+- Cloud tests are automatically skipped if services are not running
+- Tests won't break regular CI/CD if services unavailable
+- Each test uses unique keys/blobs to avoid conflicts
+- Tests clean up after themselves
 
 ## Contributing
 

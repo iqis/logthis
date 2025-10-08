@@ -1,7 +1,5 @@
-citHeader("To cite logthis in publications use:")
-
-citEntry(
-  entry    = "Manual",
+bibentry(
+  bibtype  = "Manual",
   title    = "logthis: Structured Logging Framework for R",
   author   = "iqis",
   year     = "2025",

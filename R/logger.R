@@ -24,7 +24,7 @@
 #' 
 #' # Chain multiple loggers together
 #' log_console <- logger() %>% with_receivers(to_console())
-#' log_file <- logger() %>% with_receivers(to_text_file(path = "app.log"))
+#' log_file <- logger() %>% with_receivers(to_text() %>% on_local(path = "app.log"))
 #'
 #' # Chain loggers: event goes through both
 #' WARNING("Database error") %>%
@@ -34,7 +34,7 @@
 #' # Scope-based logger masking
 #' process_data <- function() {
 #'     # Add file logging in this scope only
-#'     log_this <- log_this %>% with_receivers(to_text_file(path = "process.log"))
+#'     log_this <- log_this %>% with_receivers(to_text() %>% on_local(path = "process.log"))
 #'
 #'     log_this(NOTE("Starting data processing"))
 #'     # ... processing logic
@@ -110,6 +110,7 @@ logger <- function(){
                               upper = 100),
                 receivers = list(),
                 receiver_labels = list(),
+                receiver_names = character(0),
                 tags = NULL))
 }
 
@@ -125,6 +126,7 @@ void_logger <- function(){
                               upper = 100),
                 receivers = list(),
                 receiver_labels = list(),
+                receiver_names = character(0),
                 tags = NULL))
 }
 
@@ -161,7 +163,7 @@ void_logger <- function(){
 #' process_data <- function() {
 #'     # Add file logging to existing console logging
 #'     log_this <- log_this %>%
-#'         with_receivers(to_text_file(path = "data.log"))
+#'         with_receivers(to_text() %>% on_local(path = "data.log"))
 #'
 #'     log_this(NOTE("Now logs to both console and file"))
 #' }
@@ -197,7 +199,7 @@ with_receivers <- function(logger, ..., append = TRUE){
                         } else {
                           stop("Arguments must be log_receiver or log_formatter.\n",
                                "  Got: ", class(x)[1], "\n",
-                               "  Solution: Use receiver functions like to_console(), to_text_file(), etc.\n",
+                               "  Solution: Use receiver functions like to_console(), to_identity(), etc.\n",
                                "  Or: Create formatted receiver with to_text() %>% on_local() pattern\n",
                                "  See: .claude/use-cases.md for examples")
                         }
@@ -208,7 +210,39 @@ with_receivers <- function(logger, ..., append = TRUE){
                             function(x) deparse(x, width.cutoff = 500),
                             character(1))
 
+  # Extract or generate receiver names
+  provided_names <- names(list(...))
+  if (is.null(provided_names)) {
+    provided_names <- character(length(receivers))
+  }
+
+  # Generate auto-names for unnamed receivers
   config <- attr(logger, "config")
+  existing_count <- if (append) length(config$receivers) else 0
+
+  receiver_names <- character(length(receivers))
+  for (i in seq_along(receivers)) {
+    if (provided_names[i] == "" || is.na(provided_names[i])) {
+      # Auto-generate name
+      receiver_names[i] <- paste0("receiver_", existing_count + i)
+    } else {
+      receiver_names[i] <- provided_names[i]
+    }
+  }
+
+  # Handle name collisions with existing receivers (if appending)
+  if (append && !is.null(config$receiver_names)) {
+    existing_names <- config$receiver_names
+    for (i in seq_along(receiver_names)) {
+      original_name <- receiver_names[i]
+      suffix <- 2
+      while (receiver_names[i] %in% existing_names) {
+        receiver_names[i] <- paste0(original_name, "_", suffix)
+        suffix <- suffix + 1
+      }
+    }
+  }
+
   if (append) {
     config$receivers <- c(config$receivers, receivers)
     # Store receiver labels as plain text for error reporting
@@ -217,9 +251,16 @@ with_receivers <- function(logger, ..., append = TRUE){
     } else {
       config$receiver_labels <- c(config$receiver_labels, receiver_labels)
     }
+    # Append receiver names
+    if (is.null(config$receiver_names)) {
+      config$receiver_names <- receiver_names
+    } else {
+      config$receiver_names <- c(config$receiver_names, receiver_names)
+    }
   } else {
     config$receivers <- receivers
     config$receiver_labels <- receiver_labels
+    config$receiver_names <- receiver_names
   }
   attr(logger, "config") <- config
 
@@ -279,10 +320,10 @@ with_limits <- function(x, lower, upper, ...){
 #' log_this <- logger() %>%
 #'     with_receivers(to_console(lower = WARNING)) %>%
 #'     with_limits(lower = NOTE, upper = HIGHEST)
-#'     
-#' log_this(CHATTER("Blocked by logger"))    # Below logger limit (40 < 40)
-#' log_this(NOTE("Blocked by receiver"))     # Passes logger (40 >= 40), blocked by receiver (40 < 80)
-#' log_this(WARNING("Reaches console"))      # Passes both filters (80 >= 40 AND 80 >= 80)
+#'
+#' log_this(DEBUG("Blocked by logger"))      # Below logger limit (20 < 30)
+#' log_this(NOTE("Blocked by receiver"))     # Passes logger (30 >= 30), blocked by receiver (30 < 60)
+#' log_this(WARNING("Reaches console"))      # Passes both filters (60 >= 30 AND 60 >= 60)
 #'
 with_limits.logger <- function(x, lower = LOWEST, upper = HIGHEST, ...){
   logger <- x
@@ -347,7 +388,7 @@ with_limits.logger <- function(x, lower = LOWEST, upper = HIGHEST, ...){
 #' log_this <- logger() %>%
 #'     with_receivers(
 #'         to_console() %>% with_limits(lower = WARNING),      # Console: warnings+
-#'         to_text_file("debug.log") %>% with_limits(lower = CHATTER)  # File: everything
+#'         to_text() %>% on_local("debug.log") %>% with_limits(lower = TRACE)  # File: everything
 #'     )
 #'
 #' # Two-level filtering example:
@@ -355,10 +396,10 @@ with_limits.logger <- function(x, lower = LOWEST, upper = HIGHEST, ...){
 #'     with_limits(lower = NOTE, upper = HIGHEST) %>%           # Logger: NOTE+
 #'     with_receivers(
 #'         to_console() %>% with_limits(lower = WARNING),       # Console: WARNING+
-#'         to_text_file("all.log")                               # File: NOTE+ (from logger)
+#'         to_text() %>% on_local("all.log")                     # File: NOTE+ (from logger)
 #'     )
 #'
-#' log_this(CHATTER("Blocked by logger"))     # Below logger limit
+#' log_this(DEBUG("Blocked by logger"))       # Below logger limit
 #' log_this(NOTE("Only in file"))             # Passes logger, blocked by console receiver
 #' log_this(WARNING("Both outputs"))          # Passes both filters
 #'
@@ -402,17 +443,18 @@ with_limits.log_receiver <- function(x, lower = LOWEST, upper = HIGHEST, ...){
 #' Sets filtering limits on a formatter before it's converted to a receiver.
 #' This allows for level filtering to be configured on formatters.
 #'
-#' @param formatter A log formatter from to_text(), to_json(), etc.
+#' @param x A log formatter from to_text(), to_json(), etc.
 #' @param lower Lower level limit (inclusive)
 #' @param upper Upper level limit (inclusive)
 #' @param ... Additional arguments (unused)
 #' @return Enriched log formatter; <log_formatter>
 #' @export
 #' @family formatters
-with_limits.log_formatter <- function(formatter,
+with_limits.log_formatter <- function(x,
                                       lower = LOWEST,
                                       upper = HIGHEST,
                                       ...) {
+  formatter <- x
   guard_level_type(lower)
   guard_level_type(upper)
 

@@ -30,11 +30,11 @@ log_this <- void_logger()
 # @files R/receivers.R, R/logger.R, R/log_event_levels.R
 #
 # @intent Log an event to file
-# @functions to_text_file(), to_json_file(), to_text(), to_json(), on_local()
+# @functions to_text(), to_json(), on_local()
 # @files R/receivers.R
 #
 # @intent Rotate log files by size
-# @functions to_text_file(max_size, max_files), on_local(max_size, max_files)
+# @functions on_local(max_size, max_files)
 # @files R/receivers.R
 #
 # @intent Log to cloud storage (S3, Azure)
@@ -153,8 +153,6 @@ log_this <- void_logger()
 # to_console(lower: log_event_level, upper: log_event_level) -> log_receiver
 # to_identity() -> log_receiver
 # to_void() -> log_receiver
-# to_text_file(path: string, ...) -> log_receiver
-# to_json_file(path: string, ...) -> log_receiver
 #
 # with_limits.log_receiver(log_receiver, lower, upper) -> log_receiver
 # with_limits.log_formatter(log_formatter, lower, upper) -> log_formatter

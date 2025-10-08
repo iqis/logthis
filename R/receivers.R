@@ -83,11 +83,11 @@ formatter <- function(func) {
 #' - `{level}` - Event level name (e.g., "WARNING")
 #' - `{level_number}` - Numeric level value (e.g., 60)
 #' - `{message}` - The log message text
-#' - `{tags}` - Formatted tag list (e.g., "[auth, security]" or "" if no tags)
+#' - `{tags}` - Formatted tag list (e.g., "\[auth, security\]" or "" if no tags)
 #'
 #' **Custom Fields**: Any additional fields passed when creating the event
 #'
-#' @param template glue template string (default: "{time} [{level}:{level_number}] {message}")
+#' @param template glue template string
 #' @return log formatter; <log_formatter>
 #' @export
 #' @family formatters
@@ -145,6 +145,8 @@ to_text <- function(template = "{time} [{level}:{level_number}] {message}") {
 #' Creates a formatter that converts log events to JSON (JSONL format).
 #' Must be paired with a backend via on_*() functions before use in a logger.
 #'
+#' **Note**: Requires the `jsonlite` package. Install with `install.packages('jsonlite')`.
+#'
 #' @section JSON Output Structure:
 #'
 #' **Standard Fields** (always included):
@@ -174,6 +176,13 @@ to_text <- function(template = "{time} [{level}:{level_number}] {message}") {
 #' # Pretty JSON for debugging
 #' to_json(pretty = TRUE) %>% on_local(path = "debug.json")
 to_json <- function(pretty = FALSE) {
+  # Check if jsonlite is available
+  if (!requireNamespace("jsonlite", quietly = TRUE)) {
+    stop("jsonlite package is required for to_json() but is not installed.\n",
+         "  Solution: Install with install.packages('jsonlite')\n",
+         "  Or: Use to_text() for plain text logging instead")
+  }
+
   fmt_func <- formatter(function(event) {
     # Extract all event data
     event_data <- list(time = as.character(event$time),
@@ -314,44 +323,80 @@ on_local <- function(formatter,
 
 #' Attach S3 handler to formatter
 #'
-#' @param formatter A log formatter
+#' Configures buffered writes to AWS S3. Since S3 doesn't support append operations,
+#' logs are written to time-partitioned keys when the buffer flushes.
+#'
+#' **Note**: Requires the `aws.s3` package. Install with `install.packages('aws.s3')`.
+#'
+#' @section S3 Key Pattern:
+#' Each flush creates a new object with timestamp:
+#' - `key_prefix = "logs/app"` produces: `logs/app-20251007-143022.log`
+#' - Format: `{key_prefix}-{YYYYMMDD-HHMMSS}.log`
+#'
+#' @section Buffering:
+#' Events are buffered in memory and flushed when:
+#' - Buffer reaches `flush_threshold` events (default: 100)
+#' - Manual flush via `attr(receiver, "flush")()`
+#' - Process termination (register flush with on.exit() in your code)
+#'
+#' @param formatter A log formatter from to_text(), to_json(), etc.
 #' @param bucket S3 bucket name
-#' @param key S3 object key (path within bucket)
-#' @param region AWS region
+#' @param key_prefix S3 object key prefix (timestamp will be appended)
+#' @param region AWS region (default: "us-east-1")
+#' @param flush_threshold Number of events to buffer before auto-flush (default: 100)
 #' @param ... Additional arguments passed to aws.s3::put_object()
 #' @return Enriched log formatter; <log_formatter>
 #' @export
 #' @family handlers
 #'
+#' @section Type Contract:
+#' ```
+#' on_s3(formatter: log_formatter, bucket: string, key_prefix: string,
+#'       region: string = "us-east-1", flush_threshold: numeric = 100) -> log_formatter
+#' ```
+#'
 #' @examples
 #' \dontrun{
-#' # Text logs to S3
-#' to_text() %>% on_s3(bucket = "my-logs",
-#'                     key = "app/production.log")
+#' # Text logs to S3 with default buffering (100 events)
+#' recv <- to_text() %>% on_s3(bucket = "my-logs",
+#'                              key_prefix = "app/production")
 #'
-#' # JSON logs to S3
-#' to_json() %>% on_s3(bucket = "my-logs",
-#'                     key = "app/events.jsonl")
+#' # JSON logs with custom buffer size
+#' recv <- to_json() %>% on_s3(bucket = "my-logs",
+#'                              key_prefix = "app/events",
+#'                              flush_threshold = 50)
+#'
+#' # Manual flush
+#' log_this <- logger() %>% with_receivers(recv)
+#' log_this(INFO("Event 1"))
+#' # ... more events ...
+#' attr(recv, "flush")()  # Force flush remaining buffer
 #' }
 on_s3 <- function(formatter,
                   bucket,
-                  key,
+                  key_prefix,
                   region = "us-east-1",
+                  flush_threshold = 100,
                   ...) {
   if (!inherits(formatter, "log_formatter")) {
     stop("`formatter` must be a log_formatter.\n",
          "  Got: ", class(formatter)[1], "\n",
          "  Solution: Use to_text() or to_json() to create formatter first\n",
-         "  Example: to_json() %>% on_s3(bucket = \"logs\", key = \"app.jsonl\")\n",
+         "  Example: to_json() %>% on_s3(bucket = \"logs\", key_prefix = \"app\")\n",
          "  See: UC-010 in .claude/use-cases.md")
+  }
+
+  if (!is.numeric(flush_threshold) || flush_threshold < 1) {
+    stop("`flush_threshold` must be a positive number")
   }
 
   config <- attr(formatter, "config")
 
   config$backend <- "s3"
   config$backend_config <- list(bucket = bucket,
-                                 key = key,
+                                 key_prefix = key_prefix,
                                  region = region,
+                                 flush_threshold = as.integer(flush_threshold),
                                  extra_args = list(...))
 
   attr(formatter, "config") <- config
@@ -360,27 +405,69 @@ on_s3 <- function(formatter,
 
 #' Attach Azure Blob Storage handler to formatter
 #'
-#' @param formatter A log formatter
+#' Configures buffered writes to Azure Blob Storage using Append Blobs.
+#' Append Blobs are optimized for append operations, making them ideal for logging.
+#'
+#' **Note**: Requires the `AzureStor` package. Install with `install.packages('AzureStor')`.
+#'
+#' @section Azure Append Blobs:
+#' - Blob is created as an AppendBlob on first write
+#' - Each flush appends a block to the same blob
+#' - Maximum blob size: 195 GB
+#' - Maximum block size: 4 MB
+#'
+#' @section Buffering:
+#' Events are buffered in memory and flushed when:
+#' - Buffer reaches `flush_threshold` events (default: 100)
+#' - Manual flush via `attr(receiver, "flush")()`
+#' - Process termination (register flush with on.exit() in your code)
+#'
+#' @param formatter A log formatter from to_text(), to_json(), etc.
 #' @param container Azure container name
 #' @param blob Blob name (path within container)
 #' @param endpoint Azure storage endpoint (from AzureStor::storage_endpoint())
-#' @param ... Additional arguments
+#' @param flush_threshold Number of events to buffer before auto-flush (default: 100)
+#' @param ... Additional arguments passed to AzureStor functions
 #' @return Enriched log formatter; <log_formatter>
 #' @export
 #' @family handlers
 #'
+#' @section Type Contract:
+#' ```
+#' on_azure(formatter: log_formatter, container: string, blob: string,
+#'          endpoint: storage_endpoint, flush_threshold: numeric = 100) -> log_formatter
+#' ```
+#'
 #' @examples
 #' \dontrun{
-#' endpoint <- AzureStor::storage_endpoint("https://myaccount.blob.core.windows.net",
-#'                                         key = "...")
-#' to_text() %>% on_azure(container = "logs",
-#'                        blob = "app.log",
-#'                        endpoint = endpoint)
+#' # Create endpoint
+#' endpoint <- AzureStor::storage_endpoint(
+#'   "https://myaccount.blob.core.windows.net",
+#'   key = "your-access-key"
+#' )
+#'
+#' # Text logs to Azure with default buffering
+#' recv <- to_text() %>% on_azure(container = "logs",
+#'                                 blob = "app.log",
+#'                                 endpoint = endpoint)
+#'
+#' # JSON logs with custom buffer size
+#' recv <- to_json() %>% on_azure(container = "logs",
+#'                                 blob = "events.jsonl",
+#'                                 endpoint = endpoint,
+#'                                 flush_threshold = 50)
+#'
+#' # Manual flush
+#' log_this <- logger() %>% with_receivers(recv)
+#' log_this(INFO("Event 1"))
+#' # ... more events ...
+#' attr(recv, "flush")()  # Force flush remaining buffer
 #' }
 on_azure <- function(formatter,
                      container,
                      blob,
                      endpoint,
+                     flush_threshold = 100,
                      ...) {
   if (!inherits(formatter, "log_formatter")) {
     stop("`formatter` must be a log_formatter.\n",
@@ -390,12 +477,17 @@ on_azure <- function(formatter,
          "  See: UC-011 in .claude/use-cases.md")
   }
 
+  if (!is.numeric(flush_threshold) || flush_threshold < 1) {
+    stop("`flush_threshold` must be a positive number")
+  }
+
   config <- attr(formatter, "config")
 
   config$backend <- "azure"
   config$backend_config <- list(container = container,
                                  blob = blob,
                                  endpoint = endpoint,
+                                 flush_threshold = as.integer(flush_threshold),
                                  extra_args = list(...))
 
   attr(formatter, "config") <- config
@@ -405,6 +497,25 @@ on_azure <- function(formatter,
 # ============================================================================
 # INTERNAL: Formatter → Receiver Conversion
 # ============================================================================
+
+# Backend registry for extensibility
+# Stores builder functions that convert formatter+config to receiver
+.backend_registry <- new.env(parent = emptyenv())
+
+# Register a backend builder function
+# @param name Backend name (e.g., "local", "s3", "webhook")
+# @param builder_func Function with signature: function(formatter, config) -> log_receiver
+.register_backend <- function(name, builder_func) {
+  if (!is.character(name) || length(name) != 1) {
+    stop("Backend name must be a single character string")
+  }
+  if (!is.function(builder_func)) {
+    stop("Builder must be a function")
+  }
+  .backend_registry[[name]] <- builder_func
+  invisible(NULL)
+}
+
 
 # Helper to rotate log files
 .rotate_file <- function(path, max_files) {
@@ -420,7 +531,7 @@ on_azure <- function(formatter,
   }
 }
 
-# Convert formatter to receiver
+# Convert formatter to receiver using registry dispatch
 .formatter_to_receiver <- function(formatter) {
   if (!inherits(formatter, "log_formatter")) {
     stop("Must be a log_formatter")
@@ -432,16 +543,19 @@ on_azure <- function(formatter,
     stop("Formatter must have a handler configured via on_local(), on_s3(), etc.")
   }
 
-  # Dispatch to handler-specific builder
-  if (config$backend == "local") {
-    .build_local_receiver(formatter, config)
-  } else if (config$backend == "s3") {
-    .build_s3_receiver(formatter, config)
-  } else if (config$backend == "azure") {
-    .build_azure_receiver(formatter, config)
-  } else {
-    stop("Unknown backend type: ", config$backend)
+  # Look up builder in registry
+  backend <- config$backend
+  builder <- .backend_registry[[backend]]
+
+  if (is.null(builder)) {
+    available <- names(.backend_registry)
+    stop("Unknown backend type: '", backend, "'\n",
+         "  Available backends: ", paste(available, collapse = ", "), "\n",
+         "  Solution: Use a supported on_*() handler function")
   }
+
+  # Call the builder
+  builder(formatter, config)
 }
 
 # Build local filesystem receiver
@@ -475,65 +589,55 @@ on_azure <- function(formatter,
   })
 }
 
-# Build S3 receiver
+# Build S3 receiver with buffering
 .build_s3_receiver <- function(formatter, config) {
   bc <- config$backend_config
 
   # Check package availability at receiver creation time
   if (!requireNamespace("aws.s3", quietly = TRUE)) {
-    stop("Package 'aws.s3' required for S3 backend. Install with: install.packages('aws.s3')")
+    stop("Package 'aws.s3' required for S3 backend.\n",
+         "  Solution: Install with install.packages('aws.s3')\n",
+         "  Or: Use on_local() for local file logging instead")
   }
 
-  receiver(function(event) {
-    # Level filtering
-    if (!is.null(config$lower) &&
-        event$level_number < attr(config$lower, "level_number")) {
-      return(invisible(NULL))
-    }
-    if (!is.null(config$upper) &&
-        event$level_number > attr(config$upper, "level_number")) {
+  # Initialize buffer (closure variable)
+  buffer <- character(0)
+  flush_threshold <- bc$flush_threshold
+
+  # Flush function - writes buffer to time-partitioned S3 key
+  flush <- function(force = FALSE) {
+    if (length(buffer) == 0) {
       return(invisible(NULL))
     }
 
-    # Format
-    content <- formatter(event)
+    # Create time-partitioned key
+    timestamp <- format(Sys.time(), "%Y%m%d-%H%M%S")
+    key <- paste0(bc$key_prefix, "-", timestamp, ".log")
 
-    # Write to S3 (append by reading, appending, writing back)
+    # Combine buffer contents
+    content <- paste(buffer, collapse = "\n")
+
+    # Upload to S3
     tryCatch({
-      # Try to read existing content
-      existing <- tryCatch(aws.s3::get_object(object = bc$key,
-                                              bucket = bc$bucket,
-                                              region = bc$region,
-                                              as = "text"),
-                           error = function(e) "")
-
-      # Append new content
-      new_content <- paste0(existing, content, "\n")
-
-      # Write back
       do.call(aws.s3::put_object,
-              c(list(file = charToRaw(new_content),
-                     object = bc$key,
+              c(list(file = charToRaw(paste0(content, "\n")),
+                     object = key,
                      bucket = bc$bucket,
                      region = bc$region),
                 bc$extra_args))
+
+      # Clear buffer on success
+      buffer <<- character(0)
     }, error = function(e) {
-      warning("S3 write failed: ", conditionMessage(e), call. = FALSE)
+      warning("S3 flush failed for key '", key, "': ",
+              conditionMessage(e), call. = FALSE)
     })
 
     invisible(NULL)
-  })
-}
-
-# Build Azure receiver
-.build_azure_receiver <- function(formatter, config) {
-  bc <- config$backend_config
-
-  if (!requireNamespace("AzureStor", quietly = TRUE)) {
-    stop("Package 'AzureStor' required for Azure backend")
   }
 
-  receiver(function(event) {
+  # Create receiver with buffer
+  recv <- receiver(function(event) {
     # Level filtering
     if (!is.null(config$lower) &&
         event$level_number < attr(config$lower, "level_number")) {
@@ -544,31 +648,158 @@ on_azure <- function(formatter,
       return(invisible(NULL))
     }
 
-    # Format
+    # Format and add to buffer
     content <- formatter(event)
+    buffer <<- c(buffer, content)
 
-    # Write to Azure Blob
-    tryCatch({
-      cont <- AzureStor::blob_container(bc$endpoint, bc$container)
-
-      # Read existing, append, write back (simplified)
-      existing <- tryCatch(AzureStor::storage_download(cont,
-                                                        bc$blob,
-                                                        overwrite = TRUE),
-                           error = function(e) "")
-
-      new_content <- paste0(existing, content, "\n")
-
-      do.call(AzureStor::storage_upload,
-              c(list(cont, charToRaw(new_content), bc$blob),
-                bc$extra_args))
-    }, error = function(e) {
-      warning("Azure write failed: ", conditionMessage(e), call. = FALSE)
-    })
+    # Auto-flush if threshold reached
+    if (length(buffer) >= flush_threshold) {
+      flush()
+    }
 
     invisible(NULL)
   })
+
+  # Attach flush function and buffer info as attributes
+  attr(recv, "flush") <- flush
+  attr(recv, "get_buffer_size") <- function() length(buffer)
+
+  recv
 }
+
+# Build Azure receiver with buffering and Append Blobs
+.build_azure_receiver <- function(formatter, config) {
+  bc <- config$backend_config
+
+  # Check package availability
+  if (!requireNamespace("AzureStor", quietly = TRUE)) {
+    stop("Package 'AzureStor' required for Azure backend.\n",
+         "  Solution: Install with install.packages('AzureStor')\n",
+         "  Or: Use on_local() for local file logging instead")
+  }
+
+  # Initialize buffer and state
+  buffer <- character(0)
+  flush_threshold <- bc$flush_threshold
+  blob_initialized <- FALSE
+
+  # Get container reference (cached)
+  cont <- NULL
+  get_container <- function() {
+    if (is.null(cont)) {
+      cont <<- AzureStor::blob_container(bc$endpoint, bc$container)
+    }
+    cont
+  }
+
+  # Initialize append blob if needed
+  initialize_blob <- function() {
+    if (blob_initialized) return(invisible(NULL))
+
+    tryCatch({
+      container <- get_container()
+
+      # Check if blob exists
+      blob_exists <- tryCatch({
+        AzureStor::list_blobs(container, info = "name")
+        blob_list <- AzureStor::list_blobs(container, info = "name")
+        bc$blob %in% blob_list$name
+      }, error = function(e) FALSE)
+
+      # Create append blob if it doesn't exist
+      if (!blob_exists) {
+        AzureStor::create_blob(container,
+                               bc$blob,
+                               type = "AppendBlob")
+      }
+
+      blob_initialized <<- TRUE
+    }, error = function(e) {
+      warning("Failed to initialize Azure append blob: ",
+              conditionMessage(e), call. = FALSE)
+    })
+
+    invisible(NULL)
+  }
+
+  # Flush function - appends buffer to Azure Append Blob
+  flush <- function(force = FALSE) {
+    if (length(buffer) == 0) {
+      return(invisible(NULL))
+    }
+
+    # Ensure blob is initialized
+    initialize_blob()
+
+    # Combine buffer contents
+    content <- paste(buffer, collapse = "\n")
+    content_with_newline <- paste0(content, "\n")
+
+    # Append to blob
+    tryCatch({
+      container <- get_container()
+
+      # Write to temporary file (AzureStor requires file or raw connection)
+      tmp <- tempfile()
+      on.exit(unlink(tmp), add = TRUE)
+
+      writeLines(content, tmp, sep = "\n")
+
+      # Append block to blob
+      AzureStor::upload_to_url(
+        paste0(AzureStor::blob_url(container, bc$blob), "?comp=appendblock"),
+        tmp,
+        headers = c(
+          "x-ms-blob-type" = "AppendBlob"
+        ),
+        put_md5 = FALSE
+      )
+
+      # Clear buffer on success
+      buffer <<- character(0)
+    }, error = function(e) {
+      warning("Azure flush failed for blob '", bc$blob, "': ",
+              conditionMessage(e), call. = FALSE)
+    })
+
+    invisible(NULL)
+  }
+
+  # Create receiver with buffer
+  recv <- receiver(function(event) {
+    # Level filtering
+    if (!is.null(config$lower) &&
+        event$level_number < attr(config$lower, "level_number")) {
+      return(invisible(NULL))
+    }
+    if (!is.null(config$upper) &&
+        event$level_number > attr(config$upper, "level_number")) {
+      return(invisible(NULL))
+    }
+
+    # Format and add to buffer
+    content <- formatter(event)
+    buffer <<- c(buffer, content)
+
+    # Auto-flush if threshold reached
+    if (length(buffer) >= flush_threshold) {
+      flush()
+    }
+
+    invisible(NULL)
+  })
+
+  # Attach flush function and buffer info as attributes
+  attr(recv, "flush") <- flush
+  attr(recv, "get_buffer_size") <- function() length(buffer)
+
+  recv
+}
+
+# Register built-in backends
+.register_backend("local", .build_local_receiver)
+.register_backend("s3", .build_s3_receiver)
+.register_backend("azure", .build_azure_receiver)
 
 #' Console receiver with color-coded output
 #'
@@ -601,8 +832,8 @@ on_azure <- function(formatter,
 #' # Combined with logger-level filtering
 #' log_this <- logger() %>%
 #'     with_receivers(to_console(lower = NOTE)) %>%  # Receiver: NOTE+ (inclusive)
-#'     with_limits(lower = CHATTER, upper = HIGHEST)     # Logger: CHATTER+ (inclusive)
-#' # Result: Shows CHATTER+ events, console receiver shows NOTE+ subset
+#'     with_limits(lower = TRACE, upper = HIGHEST)     # Logger: TRACE+ (inclusive)
+#' # Result: Shows TRACE+ events, console receiver shows NOTE+ subset
 #' 
 #' # Custom receiver example using the receiver() constructor
 #' my_receiver <- receiver(function(event) {
@@ -720,192 +951,3 @@ to_notif <- function(lower = NOTE, upper = WARNING, ...){
       invisible(NULL)
     })
 }
-
-#' Text file logging receiver
-#'
-#' Writes log events to a text file with timestamp and level information.
-#' Level limits are inclusive: events with level_number >= lower AND <= upper
-#' will be written to the file. Supports automatic file rotation based on size.
-#'
-#' @param lower minimum level to log (inclusive, optional); <log_event_level>
-#' @param upper maximum level to log (inclusive, optional); <log_event_level>
-#' @param path file path for log output; <character>
-#' @param append whether to append to existing file; <logical>
-#' @param max_size maximum file size in bytes before rotation (default: NULL, no rotation); <numeric>
-#' @param max_files maximum number of rotated files to keep (default: 5); <integer>
-#' @param ... additional arguments (unused)
-#'
-#' @return log receiver function; <log_receiver>
-#' @export
-#'
-#' @examples
-#' # Basic file logging
-#' file_recv <- to_text_file(path = "app.log")
-#'
-#' # Log only errors and above (inclusive)
-#' error_file <- to_text_file(lower = ERROR, path = "errors.log")
-#'
-#' # File logging with rotation (rotate when file exceeds 1MB, keep 10 rotated files)
-#' rotating_file <- to_text_file(path = "app.log", max_size = 1e6, max_files = 10)
-#'
-#' # Custom file receiver using the receiver() constructor
-#' simple_file_logger <- receiver(function(event) {
-#'   cat(paste(event$time, event$level_class, event$message),
-#'       file = "simple.log", append = TRUE, sep = "\n")
-#'   invisible(NULL)
-#' })
-#'
-to_text_file <- function(lower = LOWEST,
-                         upper = HIGHEST,
-                         path = "log.txt",
-                         append = FALSE,
-                         max_size = NULL,
-                         max_files = 5, ...){
-  stopifnot(is.character(path),
-            is.logical(append))
-
-  if (!is.null(max_size)) {
-    stopifnot(is.numeric(max_size), max_size > 0)
-  }
-
-  if (!is.null(max_files)) {
-    stopifnot(is.numeric(max_files), max_files > 0)
-    max_files <- as.integer(max_files)
-  }
-
-  if (!append) {
-    unlink(path)
-  }
-
-  # Helper function to rotate log files
-  rotate_file <- function(path, max_files) {
-    # Shift existing rotated files (log.txt.2 -> log.txt.3, etc.)
-    for (i in seq(max_files - 1, 1, -1)) {
-      old_path <- paste0(path, ".", i)
-      new_path <- paste0(path, ".", i + 1)
-      if (file.exists(old_path)) {
-        file.rename(old_path, new_path)
-      }
-    }
-
-    # Move current log file to .1
-    if (file.exists(path)) {
-      file.rename(path, paste0(path, ".1"))
-    }
-  }
-
-  receiver(
-    function(event){
-      `if`(!inherits(event, "log_event"),
-           stop("`event` must be of class `log_event`"))
-
-      if (attr(lower, "level_number") <= event$level_number &&
-          event$level_number <= attr(upper, "level_number")) {
-
-        # Check if rotation is needed
-        if (!is.null(max_size) && file.exists(path)) {
-          file_size <- file.info(path)$size
-          if (!is.na(file_size) && file_size >= max_size) {
-            rotate_file(path, max_files)
-          }
-        }
-
-        with(event,
-             cat(paste0(time, " ",
-                        "[", level_class, "]", " ",
-                        message,
-                        "\n"),
-                 file = path,
-                 append = TRUE))
-      }
-      invisible(NULL)
-    })
-}
-
-#' JSON file logging receiver
-#'
-#' Writes log events to a file as JSON objects, one per line (JSONL format).
-#' This format is ideal for log aggregation systems, cloud logging services,
-#' and structured log analysis tools.
-#'
-#' Each log entry is written as a single-line JSON object containing all event
-#' metadata: timestamp, level, message, and tags.
-#'
-#' Level limits are inclusive: events with level_number >= lower AND <= upper
-#' will be written to the file.
-#'
-#' @param lower minimum level to log (inclusive, optional); <log_event_level>
-#' @param upper maximum level to log (inclusive, optional); <log_event_level>
-#' @param path file path for JSON log output; <character>
-#' @param append whether to append to existing file; <logical>
-#' @param pretty whether to pretty-print JSON (default: FALSE for compact output); <logical>
-#' @param ... additional arguments (unused)
-#'
-#' @return log receiver function; <log_receiver>
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' # Basic JSON logging
-#' json_recv <- to_json_file(path = "app.jsonl")
-#'
-#' # JSON logging with pretty printing (for debugging)
-#' pretty_json <- to_json_file(path = "debug.json", pretty = TRUE)
-#'
-#' # Use with logger
-#' log_this <- logger() %>%
-#'     with_receivers(
-#'         to_console(),  # Human-readable console output
-#'         to_json_file(path = "logs/app.jsonl")  # Machine-readable structured logs
-#'     )
-#'
-#' log_this(NOTE("User login", tags = c("auth", "user:123")))
-#' # Outputs (one JSON object per line):
-#' # {"time":"2025-10-07 18:30:00","level":"NOTE","level_number":40,
-#' #  "message":"User login","tags":["auth","user:123"]}
-#' }
-#'
-to_json_file <- function(lower = LOWEST,
-                         upper = HIGHEST,
-                         path = "log.jsonl",
-                         append = FALSE,
-                         pretty = FALSE, ...){
-  stopifnot(is.character(path),
-            is.logical(append),
-            is.logical(pretty))
-
-  if (!append) {
-    unlink(path)
-  }
-
-  receiver(
-    function(event){
-      `if`(!inherits(event, "log_event"),
-           stop("`event` must be of class `log_event`"))
-
-      if (attr(lower, "level_number") <= event$level_number &&
-          event$level_number <= attr(upper, "level_number")) {
-
-        # Convert event to list for JSON serialization
-        event_data <- list(
-          time = as.character(event$time),
-          level = event$level_class,
-          level_number = as.numeric(event$level_number),
-          message = event$message
-        )
-
-        # Add tags if present
-        if (!is.null(event$tags) && length(event$tags) > 0) {
-          event_data$tags <- event$tags
-        }
-
-        # Serialize to JSON
-        json_line <- jsonlite::toJSON(event_data, auto_unbox = TRUE, pretty = pretty)
-
-        # Write to file (one JSON object per line for JSONL format)
-        cat(json_line, "\n", file = path, append = TRUE, sep = "")
-      }
-      invisible(NULL)
-    })
-}
-

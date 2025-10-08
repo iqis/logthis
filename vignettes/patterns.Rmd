@@ -48,7 +48,7 @@ Log to multiple destinations simultaneously.
 log_this <- logger() %>%
   with_receivers(
     to_console(),                    # For development visibility
-    to_text_file("app.log"),         # For local debugging
+    to_text() %>% on_local(path = "app.log"),  # For local debugging
     to_json() %>%                    # For production analytics
       on_s3(bucket = "logs",
             key = "prod/app.jsonl")
@@ -71,7 +71,7 @@ Different log levels for different receivers.
 log_this <- logger() %>%
   with_receivers(
     to_console(lower = ERROR),       # Console: errors only
-    to_text_file("debug.log"),       # File: everything
+    to_text() %>% on_local(path = "debug.log"),  # File: everything
     to_json() %>%                    # S3: warnings and above
       on_s3(bucket = "logs",
             key = "warnings.jsonl",
@@ -95,9 +95,9 @@ Automatically rotate log files when they reach size limit.
 ```{r eval=FALSE}
 log_this <- logger() %>%
   with_receivers(
-    to_text_file(path = "app.log",
-                 max_size = 10485760,    # 10 MB
-                 max_files = 5)          # Keep 5 rotations
+    to_text() %>% on_local(path = "app.log",
+                           max_size = 10485760,    # 10 MB
+                           max_files = 5)  # Keep 5 rotations
   )
 
 # When app.log reaches 10MB:
@@ -121,7 +121,7 @@ Add tags for categorization and filtering.
 ```{r eval=FALSE}
 # Global tags (applied to all events)
 log_this <- logger() %>%
-  with_receivers(to_json_file("events.jsonl")) %>%
+  with_receivers(to_json() %>% on_local(path = "events.jsonl")) %>%
   with_tags("api", "production", "v2")
 
 # Per-event tags
@@ -148,7 +148,7 @@ Add arbitrary context to events.
 
 ```{r eval=FALSE}
 log_this <- logger() %>%
-  with_receivers(to_json_file("events.jsonl"))
+  with_receivers(to_json() %>% on_local(path = "events.jsonl"))
 
 log_this(ERROR("Payment failed",
                user_id = 12345,
@@ -214,7 +214,7 @@ Add logging for specific function without modifying base logger.
 # Function-specific enhanced logger
 process_data <- function(data) {
   log_this <- .base_logger %>%
-    with_receivers(to_text_file("process_data_detail.log")) %>%
+    with_receivers(to_text() %>% on_local(path = "process_data_detail.log")) %>%
     with_tags("process_data")
 
   log_this(NOTE("Processing started", rows = nrow(data)))
@@ -292,7 +292,7 @@ log_this <- logger() %>%
   with_receivers(
     to_console(),
     failing_receiver(),
-    to_text_file("app.log")
+    to_text() %>% on_local(path = "app.log")
   )
 
 log_this(NOTE("Test message"))
@@ -314,7 +314,7 @@ Create application-specific log levels.
 AUDIT <- log_event_level("AUDIT", 35)  # Between NOTE(30) and MESSAGE(40)
 
 log_this <- logger() %>%
-  with_receivers(to_text_file("audit.log"))
+  with_receivers(to_text() %>% on_local(path = "audit.log"))
 
 log_this(AUDIT("User accessed sensitive data",
                user_id = 789,
@@ -345,7 +345,7 @@ if (Sys.getenv("ENVIRONMENT") == "production") {
   log_this <- logger() %>%
     with_receivers(
       to_console(),
-      to_text_file("debug.log")
+      to_text() %>% on_local(path = "debug.log")
     ) %>%
     with_limits(lower = DEBUG)
 }
@@ -410,7 +410,7 @@ setup_logger_from_config <- function() {
       receivers <- c(receivers, list(to_console()))
     }
     if (!is.null(recv_cfg$file)) {
-      receivers <- c(receivers, list(to_text_file(recv_cfg$file$path)))
+      receivers <- c(receivers, list(to_text() %>% on_local(path = recv_cfg$file$path)))
     }
     if (!is.null(recv_cfg$s3)) {
       receivers <- c(receivers,
@@ -441,7 +441,7 @@ Log progress in batch jobs.
 log_this <- logger() %>%
   with_receivers(
     to_console(),
-    to_json_file("batch_progress.jsonl")
+    to_json() %>% on_local(path = "batch_progress.jsonl")
   )
 
 process_batch <- function(items) {
@@ -533,7 +533,7 @@ sec_logger <- logger() %>%
     to_console(lower = SEC_ALERT),
 
     # Secure file: All security events
-    to_json_file("security.jsonl", lower = SEC_INFO),
+    to_json() %>% on_local(path = "security.jsonl") %>% with_limits(lower = SEC_INFO),
 
     # Immutable archive: Breaches only
     to_json() %>%

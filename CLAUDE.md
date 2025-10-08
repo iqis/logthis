@@ -434,3 +434,4 @@ devtools::test()
 - Consult test files for expected behavior
 - Verify changes don't break the 130 existing tests
 - when formatting, as much as possible, have the first argument to a function call on the same line as the (, and each argument on a new line) is this Lisp style? I like it very much.
+- use function.method(): by which I mean that use appropriate general/method patterns wherever possible.
