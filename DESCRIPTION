@@ -31,7 +31,8 @@ Suggests:
     arrow,
     aws.s3,
     AzureStor,
-    mirai
+    mirai,
+    bench
 Imports:
     magrittr,
     glue
