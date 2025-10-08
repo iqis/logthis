@@ -329,26 +329,67 @@ log_this(NOTE("Message"))
 # Console and S3 receive message even if file write fails
 ```
 
-### 5. Shiny Integration
+### 5. Shiny Integration ⭐ MAJOR DIFFERENTIATOR
 
-Built-in UI receivers for interactive applications:
+**No Python equivalent exists.** Python web frameworks (Dash, Streamlit, Flask) require custom JavaScript and callbacks for user notifications. logthis provides **built-in UI receivers** that automatically show alerts to Shiny users:
 
 ```{r shiny-integration, eval=FALSE}
 library(shiny)
+library(logthis)
 
-log_this <- logger() %>%
+# Setup logger with UI receivers
+app_logger <- logger() %>%
   with_receivers(
-    to_console(lower = NOTE),
-    to_shinyalert(lower = ERROR),
-    to_notif(lower = WARNING)
+    to_console(lower = NOTE),              # Developer console
+    to_shinyalert(lower = ERROR),          # Modal alerts for errors
+    to_notif(lower = WARNING, upper = WARNING),  # Toast notifications for warnings
+    to_json() %>% on_local("app_audit.jsonl")    # Audit trail
   )
 
-# Errors show as modal alerts
-log_this(ERROR("Critical error"))
+server <- function(input, output, session) {
+  # Bind user context from Shiny session
+  user_logger <- app_logger %>%
+    with_tags(
+      paste0("user:", session$user),
+      paste0("session:", session$token)
+    )
 
-# Warnings show as notifications
-log_this(WARNING("Warning message"))
+  observeEvent(input$process_data, {
+    tryCatch({
+      # Validation warnings automatically show as notifications
+      if (nrow(input_data()) == 0) {
+        user_logger(WARNING("No data to process"))
+        return()
+      }
+
+      # Processing
+      result <- process_data(input_data())
+
+      # Success message
+      user_logger(NOTE("Data processed successfully"))
+
+    }, error = function(e) {
+      # Errors automatically show as modal alerts + logged to file
+      user_logger(ERROR(paste("Processing failed:", e$message)))
+    })
+  })
+}
 ```
+
+**Why this is a killer feature:**
+
+| Feature | Python (Dash/Streamlit/Flask) | logthis + Shiny |
+|---------|-------------------------------|-----------------|
+| **User notifications** | Custom JavaScript/callbacks required | ✅ Built-in `to_shinyalert()`, `to_notif()` |
+| **Session integration** | Manual context passing | ✅ Direct access to `session` object |
+| **Audit + UI in one** | Separate systems (logging vs notifications) | ✅ Same logger for both audit trail and user alerts |
+| **Level-based routing** | Manual if/else logic | ✅ Automatic (errors → modals, warnings → toasts) |
+| **Lines of code** | 50+ lines for notification system | ✅ 3 lines (`to_shinyalert()` + `to_notif()`) |
+
+**Real-world impact:**
+- **Pharma clinical dashboards** - Medical monitors get instant alerts for serious AEs
+- **Enterprise Shiny apps** - Users see friendly error messages while IT gets detailed logs
+- **Data validation dashboards** - Warnings show as toasts, errors as blocking modals
 
 ### 6. Granular 0-100 Level Scale
 
@@ -441,14 +482,15 @@ process_request <- function(request_id) {
 - Working with log aggregation systems (ELK, Datadog)
 
 ### Choose `logthis` when:
+- **Building Shiny applications** ⭐ (no Python equivalent for Dash/Streamlit)
 - Working in R ecosystem
-- Need functional, composable design
-- Want Shiny application integration
+- **Need functional, composable design** (pure R idioms with pipes)
 - Prefer explicit state over global configuration
+- **Pharmaceutical/clinical analysis** (statistical provenance, regulatory submissions)
 - Need scope-based logger enhancement
 - Building R packages with logging
-- Want resilient error handling
-- Need cloud storage integration (S3, Azure)
+- Want resilient error handling (one receiver failure doesn't stop others)
+- **Need cloud storage integration** (built-in S3/Azure receivers)
 
 ## Audit Logging in Production Systems
 

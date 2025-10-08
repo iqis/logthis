@@ -13,8 +13,9 @@
 
 ## Features
 
+### Core Capabilities
 - 🎯 **Hierarchical Event Levels** - Categorize messages by importance (0-100 scale)
-- 🎨 **Multiple Output Receivers** - Send logs to console, files, Shiny alerts, and more
+- 🎨 **Multiple Output Receivers** - Send logs to console, files, cloud storage, and more
 - ⚙️ **Configurable Filtering** - Set min/max level limits to control output
 - 🔧 **Composable Design** - Use functional programming patterns with pipes
 - 🔗 **Logger Chaining** - Chain multiple loggers together for complex routing
@@ -22,7 +23,13 @@
 - 🌈 **Color-Coded Console Output** - Visual distinction for different log levels
 - 📝 **Structured Events** - Rich metadata with timestamps, tags, and custom fields
 - 🏷️ **Flexible Tagging System** - Track provenance, context, and categorization with hierarchical tags
-- 🔗 **Shiny Integration** - Built-in support for Shiny applications
+
+### ⭐ Shiny Integration (No Python Equivalent)
+- **Built-in UI receivers** - `to_shinyalert()` for modal alerts, `to_notif()` for toast notifications
+- **Automatic level routing** - Errors → modals, warnings → toasts, all configurable
+- **Session integration** - Bind user context from Shiny sessions for audit trails
+- **Unified logging** - Same logger handles both user alerts AND backend audit logs
+- **Zero custom JavaScript** - Unlike Python Dash/Streamlit which require manual notification systems
 
 ## 🤖 AI-Forward Development & AI-Friendly Design
 
