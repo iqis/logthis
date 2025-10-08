@@ -1,0 +1,557 @@
+---
+title: "Advanced Receivers: Cloud, HTTP, and Structured Formats"
+author: "logthis"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Advanced Receivers: Cloud, HTTP, and Structured Formats}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval = FALSE  # Don't eval by default - examples require external services
+)
+```
+
+## Overview
+
+Beyond the basic console and file receivers, `logthis` provides enterprise-grade integrations for:
+
+- **Structured formats**: CSV, Parquet, Feather for analytics
+- **HTTP webhooks**: Generic POST to any endpoint
+- **Microsoft Teams**: Adaptive Cards via Power Automate
+- **Syslog**: RFC 3164/5424 compliant system logging
+- **Cloud storage**: AWS S3 and Azure Blob Storage
+
+This vignette demonstrates these advanced receivers with practical examples.
+
+---
+
+## Structured Format Receivers
+
+### CSV Logging for Spreadsheet Analysis
+
+CSV format is ideal for importing logs into Excel, Google Sheets, or data analysis tools.
+
+```{r csv-basic}
+library(logthis)
+library(magrittr)
+
+# Create CSV logger
+log_app <- logger() %>%
+  with_receivers(
+    to_console(),
+    to_csv() %>% on_local(path = "app.csv")
+  ) %>%
+  with_tags("production", "api")
+
+# Log events with custom fields
+log_app(NOTE("User login", user_id = 12345, ip = "192.168.1.100"))
+log_app(WARNING("High latency", endpoint = "/api/users", latency_ms = 1500))
+log_app(ERROR("Database timeout", query = "SELECT * FROM orders", timeout_sec = 30))
+```
+
+**CSV Output:**
+```csv
+time,level,level_number,message,tags,user_id,ip,endpoint,latency_ms,query,timeout_sec
+2025-10-08 10:30:15,NOTE,30,"User login","production|api",12345,192.168.1.100,,,,
+2025-10-08 10:30:16,WARNING,60,"High latency","production|api",,,,/api/users,1500,,
+2025-10-08 10:30:17,ERROR,80,"Database timeout","production|api",,,,,,"SELECT * FROM orders",30
+```
+
+**Advanced CSV Options:**
+
+```{r csv-advanced}
+# Tab-separated values (TSV)
+to_csv(separator = "\t") %>% on_local(path = "app.tsv")
+
+# Semicolon separator (European format)
+to_csv(separator = ";") %>% on_local(path = "app.csv")
+
+# No headers (for appending to existing file)
+to_csv(headers = FALSE) %>% on_local(path = "app.csv", append = TRUE)
+
+# Custom NA handling
+to_csv(na_string = "") %>% on_local(path = "app.csv")
+```
+
+---
+
+### Parquet/Feather Logging for Analytics
+
+**Parquet** and **Feather** are columnar formats optimized for analytics workloads. They support:
+
+- List columns (for tags and complex fields)
+- Efficient compression
+- Fast read/write with Apache Arrow
+- Python/Pandas interoperability
+
+```{r parquet-basic}
+# Parquet with buffering (requires arrow package)
+log_analytics <- logger() %>%
+  with_receivers(
+    to_parquet(compression = "snappy") %>%
+      on_local(path = "events.parquet", flush_threshold = 1000)
+  )
+
+# Log 10,000 events - they'll be buffered and flushed in batches
+for (i in 1:10000) {
+  log_analytics(NOTE("Processing item", item_id = i, status = "complete"))
+}
+
+# Read back with arrow
+library(arrow)
+df <- read_parquet("events.parquet")
+head(df)
+#   time                level level_number message           tags            item_id status
+#   2025-10-08 10:31:00 NOTE  30           Processing item   character(0)    1       complete
+#   2025-10-08 10:31:00 NOTE  30           Processing item   character(0)    2       complete
+```
+
+**Feather vs Parquet:**
+
+| Feature | Parquet | Feather |
+|---------|---------|---------|
+| Compression | Excellent | Good |
+| Read Speed | Fast | Very Fast |
+| Write Speed | Moderate | Very Fast |
+| File Size | Smallest | Larger |
+| Use Case | Long-term storage, analytics | Short-term, Python interop |
+
+```{r feather-basic}
+# Feather for fast Python interop
+to_feather(compression = "lz4") %>%
+  on_local(path = "events.feather", flush_threshold = 500)
+```
+
+**Buffering Behavior:**
+
+- Events accumulate in memory as a data frame
+- Flush occurs when `nrow(buffer) >= flush_threshold`
+- Automatic flush on logger cleanup (finalizer)
+- For Parquet/Feather, buffering significantly improves performance
+
+---
+
+## HTTP Webhook Integration
+
+### Generic Webhook Receiver
+
+Send logs to any HTTP endpoint that accepts POST requests:
+
+```{r webhook-basic}
+# Send JSON logs to webhook.site for testing
+log_webhook <- logger() %>%
+  with_receivers(
+    to_json() %>% on_webhook(url = "https://webhook.site/your-unique-id")
+  )
+
+log_webhook(ERROR("Payment processing failed",
+                  transaction_id = "TXN-12345",
+                  amount = 99.99,
+                  error_code = "CARD_DECLINED"))
+```
+
+**Webhook Payload (JSON):**
+```json
+{
+  "time": "2025-10-08T10:32:15.123456",
+  "level_class": "ERROR",
+  "level_number": 80,
+  "message": "Payment processing failed",
+  "tags": [],
+  "transaction_id": "TXN-12345",
+  "amount": 99.99,
+  "error_code": "CARD_DECLINED"
+}
+```
+
+**Advanced Webhook Configuration:**
+
+```{r webhook-advanced}
+# Custom headers for authentication
+to_json() %>%
+  on_webhook(
+    url = "https://api.example.com/logs",
+    method = "POST",
+    headers = list(
+      Authorization = paste("Bearer", Sys.getenv("API_TOKEN")),
+      `X-Custom-Header` = "value"
+    ),
+    timeout_seconds = 60,
+    max_tries = 5  # Retry up to 5 times on 5xx errors
+  )
+
+# Send text logs instead of JSON
+to_text() %>%
+  on_webhook(
+    url = "https://logs.example.com/ingest",
+    content_type = "text/plain"
+  )
+```
+
+---
+
+## Microsoft Teams Integration
+
+`to_teams()` sends log events as **Adaptive Cards** to Microsoft Teams channels via Power Automate webhooks.
+
+### Setup Steps:
+
+1. In Microsoft Teams, create a Power Automate flow:
+   - Trigger: "When a HTTP request is received"
+   - Action: "Post adaptive card in a chat or channel"
+
+2. Copy the HTTP POST URL from Power Automate
+
+3. Configure logthis:
+
+```{r teams-basic}
+# Store webhook URL securely in environment variable
+TEAMS_WEBHOOK_URL <- Sys.getenv("TEAMS_WEBHOOK_URL")
+
+log_teams <- logger() %>%
+  with_receivers(
+    to_console(),
+    to_teams(
+      webhook_url = TEAMS_WEBHOOK_URL,
+      title = "Production Alerts",
+      lower = WARNING,  # Only send WARNING and above to Teams
+      upper = HIGHEST
+    )
+  ) %>%
+  with_tags("production", "api-server")
+
+# These will appear in Teams as color-coded cards
+log_teams(WARNING("High memory usage", memory_mb = 8192, threshold_mb = 6144))
+log_teams(ERROR("Database connection lost", db_host = "prod-db-01", retry_count = 3))
+log_teams(CRITICAL("Service outage detected", service = "payment-api", duration_sec = 120))
+```
+
+### Teams Card Appearance:
+
+- **WARNING**: Orange header, warning icon
+- **ERROR**: Crimson header, error icon
+- **CRITICAL**: Crimson header with bold, critical icon
+
+**Metadata Display:**
+- Timestamp
+- Log level (with numeric value)
+- Tags (comma-separated)
+- Custom fields (displayed as Facts)
+
+**Benefits:**
+- Real-time alerts in Teams channel
+- Color-coded by severity
+- Rich metadata in structured format
+- Mobile push notifications
+
+---
+
+## Syslog Integration
+
+`to_syslog()` sends logs to syslog daemons using RFC 3164 (BSD syslog) or RFC 5424 (structured syslog) formats.
+
+### Local Syslog (UNIX Socket)
+
+```{r syslog-unix}
+# Log to local syslog daemon
+log_sys <- logger() %>%
+  with_receivers(
+    to_console(),
+    to_syslog(
+      transport = "unix",
+      socket_path = "/dev/log",
+      protocol = "rfc5424",
+      facility = "user",
+      app_name = "myapp",
+      lower = WARNING
+    )
+  )
+
+log_sys(WARNING("Disk usage high", mount_point = "/var", usage_pct = 85))
+log_sys(ERROR("Failed to connect to service", service = "redis", port = 6379))
+```
+
+### Remote Syslog (UDP/TCP)
+
+```{r syslog-remote}
+# UDP to remote syslog server
+to_syslog(
+  host = "syslog.example.com",
+  port = 514,
+  transport = "udp",
+  protocol = "rfc3164",
+  facility = "local1",
+  app_name = "api-server"
+)
+
+# TCP with TLS (if syslog server supports it)
+to_syslog(
+  host = "secure-syslog.example.com",
+  port = 6514,
+  transport = "tcp",
+  protocol = "rfc5424",
+  facility = "local0"
+)
+```
+
+### Syslog Facility Codes
+
+| Facility | Code | Typical Use |
+|----------|------|-------------|
+| user | 1 | User-level messages (default) |
+| daemon | 3 | System daemons |
+| local0 | 16 | Local use 0 (customizable) |
+| local1 | 17 | Local use 1 (customizable) |
+| local2-local7 | 18-23 | Local use 2-7 (customizable) |
+
+### Log Level to Syslog Severity Mapping
+
+| logthis Level | Syslog Severity | Name |
+|---------------|-----------------|------|
+| HIGHEST (100) | 0 | Emergency |
+| CRITICAL (90) | 2 | Critical |
+| ERROR (80) | 3 | Error |
+| WARNING (60) | 4 | Warning |
+| MESSAGE (40) | 5 | Notice |
+| NOTE (30) | 6 | Informational |
+| DEBUG (20) | 7 | Debug |
+| TRACE/LOWEST | 7 | Debug |
+
+---
+
+## Cloud Storage Integration
+
+### AWS S3
+
+```{r s3-basic}
+# JSON logs to S3
+library(aws.s3)
+
+s3_endpoint <- s3_bucket("my-logs-bucket")
+
+log_s3 <- logger() %>%
+  with_receivers(
+    to_json() %>%
+      on_s3(
+        bucket = "my-logs-bucket",
+        key_prefix = "app/events",  # Creates app/events/YYYY-MM-DD-HH-MM-SS.jsonl
+        region = "us-west-2",
+        flush_threshold = 100  # Batch 100 events before uploading
+      )
+  )
+
+# Parquet to S3 for analytics
+to_parquet() %>%
+  on_s3(
+    bucket = "my-logs-bucket",
+    key_prefix = "analytics/events",
+    region = "us-west-2",
+    flush_threshold = 1000
+  )
+```
+
+### Azure Blob Storage
+
+```{r azure-basic}
+# JSON logs to Azure
+library(AzureStor)
+
+endpoint <- storage_endpoint(Sys.getenv("AZURE_STORAGE_ENDPOINT"))
+
+log_azure <- logger() %>%
+  with_receivers(
+    to_json() %>%
+      on_azure(
+        container = "logs",
+        blob = "app/events.jsonl",
+        endpoint = endpoint,
+        flush_threshold = 100
+      )
+  )
+```
+
+---
+
+## Combining Receivers
+
+Real-world applications often combine multiple receivers:
+
+```{r combined-example, eval=FALSE}
+# Production logging setup
+log_prod <- logger() %>%
+  with_receivers(
+    # Console for development/debugging
+    to_console(lower = DEBUG),
+
+    # Local CSV for quick analysis
+    to_csv() %>% on_local(path = "logs/app.csv"),
+
+    # Parquet to S3 for long-term analytics
+    to_parquet() %>%
+      on_s3(bucket = "prod-logs", key_prefix = "events", flush_threshold = 1000),
+
+    # Teams alerts for errors
+    to_teams(
+      webhook_url = Sys.getenv("TEAMS_WEBHOOK"),
+      title = "Production Errors",
+      lower = ERROR
+    ),
+
+    # Syslog for system integration
+    to_syslog(
+      host = "syslog.internal",
+      facility = "local1",
+      app_name = "api-server",
+      lower = WARNING
+    )
+  ) %>%
+  with_limits(lower = DEBUG, upper = HIGHEST) %>%
+  with_tags("production", "us-west-2", "api-v2")
+
+# All events go to appropriate receivers based on filtering
+log_prod(DEBUG("Request received", method = "GET", path = "/api/users"))  # Console + CSV only
+log_prod(NOTE("Query executed", duration_ms = 45))  # Console + CSV + S3
+log_prod(WARNING("Rate limit approaching", requests_per_min = 900))  # All except Teams
+log_prod(ERROR("Service unavailable", service = "database"))  # All receivers
+```
+
+---
+
+## Performance Considerations
+
+### Buffering for High-Volume Logging
+
+For applications logging thousands of events per second:
+
+```{r performance}
+# Buffered Parquet - flushes in batches of 10,000
+to_parquet() %>%
+  on_local(path = "high_volume.parquet", flush_threshold = 10000)
+
+# Buffered S3 upload - reduces API calls
+to_json() %>%
+  on_s3(bucket = "logs", key_prefix = "events", flush_threshold = 5000)
+```
+
+**Benefits:**
+- Fewer I/O operations
+- Reduced cloud API calls (cost savings)
+- Better throughput for columnar formats
+
+**Trade-offs:**
+- Higher memory usage (buffer accumulation)
+- Delayed writes (events buffered until threshold)
+- Risk of data loss if process crashes before flush
+
+### Async Logging (v0.2.0+)
+
+For truly high-volume scenarios, consider async logging (planned for v0.2.0):
+
+```{r async-future, eval=FALSE}
+# Planned for v0.2.0 using mirai package
+to_async_parquet() %>%
+  on_local(path = "events.parquet", flush_threshold = 1000)
+
+# Non-blocking: returns immediately, writes happen in background
+for (i in 1:1000000) {
+  log_app(NOTE("Event", id = i))  # No blocking!
+}
+```
+
+See `docs/async-logging-research.md` for detailed async implementation plan.
+
+---
+
+## Troubleshooting
+
+### Common Issues
+
+**1. Parquet/Feather: "Package 'arrow' required"**
+
+```r
+install.packages("arrow")
+```
+
+**2. Teams: Messages not appearing**
+
+- Verify Power Automate workflow is active
+- Check webhook URL is correct
+- Ensure log level passes filter (`lower`/`upper`)
+- Test with https://webhook.site first
+
+**3. Syslog: Connection refused**
+
+```r
+# Check syslog daemon is running
+system("systemctl status rsyslog")  # Linux
+
+# For macOS, use UNIX socket instead of network
+to_syslog(transport = "unix", socket_path = "/var/run/syslog")
+```
+
+**4. S3/Azure: Authentication failed**
+
+```r
+# Set environment variables
+Sys.setenv(AWS_ACCESS_KEY_ID = "...")
+Sys.setenv(AWS_SECRET_ACCESS_KEY = "...")
+
+# Or use IAM role (recommended in EC2/ECS)
+```
+
+---
+
+## Best Practices
+
+1. **Use receiver-level filtering** to avoid unnecessary processing:
+   ```r
+   to_teams(webhook_url = url, lower = ERROR)  # Only errors to Teams
+   ```
+
+2. **Buffer cloud uploads** to reduce API costs:
+   ```r
+   to_json() %>% on_s3(bucket = "logs", flush_threshold = 1000)
+   ```
+
+3. **Store sensitive URLs in environment variables**:
+   ```r
+   to_teams(webhook_url = Sys.getenv("TEAMS_WEBHOOK"))
+   ```
+
+4. **Combine local and cloud receivers** for resilience:
+   ```r
+   with_receivers(
+     to_csv() %>% on_local("backup.csv"),  # Local fallback
+     to_json() %>% on_s3(bucket = "logs")  # Cloud storage
+   )
+   ```
+
+5. **Use appropriate formats** for your use case:
+   - **CSV**: Human-readable, spreadsheet analysis
+   - **JSON**: Log aggregation, parsing by tools (ELK, Splunk)
+   - **Parquet**: Analytics, large-scale data processing
+   - **Teams/Webhook**: Real-time alerts and notifications
+   - **Syslog**: System integration, compliance
+
+---
+
+## Next Steps
+
+- See `vignette("getting-started")` for basic logging
+- See `vignette("tagging-and-provenance")` for tagging patterns
+- See `docs/async-logging-research.md` for async logging design
+- Check package documentation: `?to_csv`, `?to_teams`, `?to_syslog`
+
+---
+
+## Session Info
+
+```{r session-info, eval=TRUE}
+sessionInfo()
+```
