@@ -1,0 +1,757 @@
+---
+title: "Migration Guide to logthis"
+author: "Siqi Zhang"
+date: "2025-10-08"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Migration Guide to logthis}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+This guide helps users migrate from other R logging packages to `logthis`.
+
+---
+
+## Quick Reference
+
+| Feature | logger | log4r | futile.logger | logthis |
+|---------|--------|-------|---------------|---------|
+| Basic logging | `log_info("msg")` | `info(logger, "msg")` | `flog.info("msg")` | `log_this(NOTE("msg"))` |
+| Log levels | 6 levels | 5 levels | 6 levels | Unlimited (0-100 scale) |
+| Multiple outputs | ✓ (appenders) | ✓ (appenders) | ✓ (appenders) | ✓ (receivers) |
+| Structured logging | ✗ | ✗ | ✗ | ✓ (custom fields) |
+| Async logging | ✗ | ✗ | ✗ | ✓ (v0.2.0) |
+| Pipe syntax | ✗ | ✗ | ✗ | ✓ (`%>%`) |
+| Tagging | ✗ | ✗ | ✗ | ✓ |
+
+---
+
+## Migrating from `logger`
+
+### Basic Logging
+
+**logger:**
+```r
+library(logger)
+
+log_info("User login", user_id = 12345)
+log_warn("High memory usage")
+log_error("Database timeout")
+```
+
+**logthis:**
+```r
+library(logthis)
+
+log_this(NOTE("User login", user_id = 12345))
+log_this(WARNING("High memory usage"))
+log_this(ERROR("Database timeout"))
+```
+
+**Key differences:**
+- `logger` uses function-based levels (`log_info()`, `log_warn()`)
+- `logthis` uses event constructors (`NOTE()`, `WARNING()`)
+- `logthis` events are objects that can be passed around, chained
+
+### Log Levels Mapping
+
+| logger | logthis | Level Number |
+|--------|---------|--------------|
+| `log_trace()` | `TRACE()` | 10 |
+| `log_debug()` | `DEBUG()` | 20 |
+| `log_info()` | `NOTE()` or `MESSAGE()` | 30 or 40 |
+| `log_success()` | `NOTE()` (custom) | 30 |
+| `log_warn()` | `WARNING()` | 60 |
+| `log_error()` | `ERROR()` | 80 |
+| `log_fatal()` | `CRITICAL()` | 90 |
+
+### Multiple Appenders/Receivers
+
+**logger:**
+```r
+log_appender(appender_console)
+log_appender(appender_file("app.log"))
+```
+
+**logthis:**
+```r
+log <- logger() %>%
+  with_receivers(
+    to_console(),
+    to_text() %>% on_local("app.log")
+  )
+
+log(NOTE("Application started"))
+```
+
+**Advantages of logthis:**
+- Explicit logger configuration (no global state)
+- Pipe-friendly syntax
+- Multiple loggers in same session (no conflicts)
+
+### Log Thresholds
+
+**logger:**
+```r
+log_threshold(INFO)
+```
+
+**logthis:**
+```r
+log <- logger() %>%
+  with_limits(lower = NOTE, upper = HIGHEST)
+```
+
+**Per-receiver thresholds in logthis:**
+```r
+log <- logger() %>%
+  with_receivers(
+    to_console(lower = DEBUG),           # Console: all events
+    to_text() %>% on_local("errors.log", lower = ERROR)  # File: errors only
+  )
+```
+
+### Custom Formatting
+
+**logger:**
+```r
+log_formatter(formatter_glue)
+log_layout(layout_glue_generator(
+  format = '{time} [{level}] {msg}'
+))
+```
+
+**logthis:**
+```r
+log <- logger() %>%
+  with_receivers(
+    to_text(template = "{time} [{level}] {message}") %>% on_local("app.log")
+  )
+```
+
+---
+
+## Migrating from `log4r`
+
+### Basic Setup
+
+**log4r:**
+```r
+library(log4r)
+
+logger <- logger(
+  threshold = "INFO",
+  appenders = list(
+    console_appender(),
+    file_appender("app.log")
+  )
+)
+
+info(logger, "User login")
+warn(logger, "High memory")
+error(logger, "Database error")
+```
+
+**logthis:**
+```r
+library(logthis)
+library(magrittr)
+
+log <- logger() %>%
+  with_limits(lower = NOTE) %>%
+  with_receivers(
+    to_console(),
+    to_text() %>% on_local("app.log")
+  )
+
+log(NOTE("User login"))
+log(WARNING("High memory"))
+log(ERROR("Database error"))
+```
+
+### Log Levels Mapping
+
+| log4r | logthis | Level Number |
+|-------|---------|--------------|
+| `DEBUG` | `DEBUG()` | 20 |
+| `INFO` | `NOTE()` or `MESSAGE()` | 30 or 40 |
+| `WARN` | `WARNING()` | 60 |
+| `ERROR` | `ERROR()` | 80 |
+| `FATAL` | `CRITICAL()` | 90 |
+
+### File Appenders
+
+**log4r:**
+```r
+logger <- logger(
+  appenders = file_appender("app.log", append = TRUE)
+)
+```
+
+**logthis:**
+```r
+log <- logger() %>%
+  with_receivers(
+    to_text() %>% on_local("app.log", append = TRUE)
+  )
+```
+
+**File rotation in logthis:**
+```r
+log <- logger() %>%
+  with_receivers(
+    to_text() %>% on_local(
+      "app.log",
+      max_size = 10 * 1024^2,  # 10 MB
+      max_files = 5             # Keep 5 rotated files
+    )
+  )
+```
+
+### Custom Layouts
+
+**log4r:**
+```r
+logger <- logger(
+  appenders = file_appender(
+    "app.log",
+    layout = default_log_layout()
+  )
+)
+```
+
+**logthis:**
+```r
+log <- logger() %>%
+  with_receivers(
+    to_text(template = "{time} [{level}] {message}") %>% on_local("app.log")
+  )
+```
+
+---
+
+## Migrating from `futile.logger`
+
+### Basic Logging
+
+**futile.logger:**
+```r
+library(futile.logger)
+
+flog.info("User login")
+flog.warn("High memory")
+flog.error("Database error")
+```
+
+**logthis:**
+```r
+library(logthis)
+
+log_this(NOTE("User login"))
+log_this(WARNING("High memory"))
+log_this(ERROR("Database error"))
+```
+
+### Log Levels Mapping
+
+| futile.logger | logthis | Level Number |
+|---------------|---------|--------------|
+| `flog.trace()` | `TRACE()` | 10 |
+| `flog.debug()` | `DEBUG()` | 20 |
+| `flog.info()` | `NOTE()` or `MESSAGE()` | 30 or 40 |
+| `flog.warn()` | `WARNING()` | 60 |
+| `flog.error()` | `ERROR()` | 80 |
+| `flog.fatal()` | `CRITICAL()` | 90 |
+
+### Multiple Appenders
+
+**futile.logger:**
+```r
+flog.appender(appender.file("app.log"))
+flog.threshold(INFO)
+```
+
+**logthis:**
+```r
+log <- logger() %>%
+  with_limits(lower = NOTE) %>%
+  with_receivers(
+    to_text() %>% on_local("app.log")
+  )
+```
+
+### Namespaces
+
+**futile.logger:**
+```r
+flog.info("Message", name = "my.package")
+flog.threshold(WARN, name = "my.package")
+```
+
+**logthis (use tags instead):**
+```r
+log <- logger() %>%
+  with_tags("my.package") %>%
+  with_receivers(to_console())
+
+log(NOTE("Message"))
+# Output includes tags: [my.package]
+```
+
+### Custom Formatting
+
+**futile.logger:**
+```r
+flog.layout(layout.format('[~l] ~m'))
+```
+
+**logthis:**
+```r
+log <- logger() %>%
+  with_receivers(
+    to_text(template = "[{level}] {message}") %>% on_local("app.log")
+  )
+```
+
+---
+
+## Unique Features of logthis
+
+### 1. Structured Logging with Custom Fields
+
+**Not available in logger/log4r/futile.logger:**
+```r
+log_this(NOTE("User login",
+              user_id = 12345,
+              ip = "192.168.1.100",
+              user_agent = "Mozilla/5.0"))
+
+log_this(ERROR("Payment failed",
+               transaction_id = "TXN-12345",
+               amount = 99.99,
+               error_code = "CARD_DECLINED"))
+```
+
+**Use cases:**
+- Log aggregation (ELK, Splunk)
+- Analytics queries on log data
+- Debugging with rich context
+
+### 2. Async Logging (v0.2.0)
+
+**Not available in other packages:**
+```r
+library(logthis)
+library(magrittr)
+
+# Auto-init with 1 daemon
+log <- logger() %>%
+  with_receivers(
+    to_text() %>% on_local("app.log") %>% as_async()
+  )
+
+# Or daemon pool for high performance
+mirai::daemons(4)
+log <- logger() %>%
+  with_receivers(
+    to_text() %>% on_local("app.log") %>% as_async(flush_threshold = 100),
+    to_json() %>% on_s3("logs", "events") %>% as_async(flush_threshold = 1000)
+  )
+
+# Non-blocking: returns immediately
+for (i in 1:10000) {
+  log(NOTE("Processing", id = i))  # ~0.1ms per event
+}
+```
+
+**Benefits:**
+- 5-20x speedup for I/O-bound logging
+- Won't block application execution
+- Perfect for Shiny apps, APIs, high-throughput batch jobs
+
+### 3. Tagging System
+
+**Not available in other packages:**
+```r
+# Logger-level tags
+log <- logger() %>%
+  with_tags("production", "api", "us-west-2") %>%
+  with_receivers(to_console())
+
+log(NOTE("Request received"))
+# Output: [production|api|us-west-2] Request received
+
+# Event-level tags
+log(NOTE("Database query") %>% with_tags("database", "slow-query"))
+# Output: [production|api|us-west-2|database|slow-query] Database query
+```
+
+**Use cases:**
+- Filtering logs by environment (prod, staging, dev)
+- Tracking request flows with request IDs
+- Organizing logs by component/service
+
+### 4. Functional Composition
+
+**Not available in other packages:**
+```r
+# Build loggers with pipes
+log_prod <- logger() %>%
+  with_limits(lower = NOTE) %>%
+  with_tags("production") %>%
+  with_receivers(
+    to_console(),
+    to_text() %>% on_local("app.log"),
+    to_json() %>% on_s3("logs", "events")
+  )
+
+# Chain events through multiple loggers
+WARNING("High memory") %>%
+  log_console() %>%
+  log_file() %>%
+  log_alert()
+
+# Scope-based masking
+my_function <- function() {
+  # Child logger adds receiver without affecting parent
+  log_this <- log_this %>% with_receivers(to_text() %>% on_local("scope.log"))
+  log_this(NOTE("Only in this scope"))
+}
+```
+
+### 5. Enterprise Integrations
+
+**Not available in other packages:**
+
+```r
+# Microsoft Teams
+log <- logger() %>%
+  with_receivers(
+    to_teams(
+      webhook_url = Sys.getenv("TEAMS_WEBHOOK"),
+      title = "Production Alerts",
+      lower = ERROR
+    )
+  )
+
+# Syslog
+log <- logger() %>%
+  with_receivers(
+    to_syslog(
+      host = "syslog.example.com",
+      port = 514,
+      transport = "udp",
+      facility = "local1"
+    )
+  )
+
+# Cloud storage
+log <- logger() %>%
+  with_receivers(
+    to_json() %>% on_s3(
+      bucket = "prod-logs",
+      key_prefix = "events",
+      region = "us-west-2"
+    )
+  )
+
+# Parquet for analytics
+log <- logger() %>%
+  with_receivers(
+    to_parquet() %>% on_local(
+      "events.parquet",
+      flush_threshold = 1000
+    )
+  )
+```
+
+### 6. Two-Level Filtering
+
+**More flexible than other packages:**
+```r
+log <- logger() %>%
+  with_limits(lower = DEBUG, upper = HIGHEST) %>%  # Logger filter
+  with_receivers(
+    to_console(lower = NOTE),                      # Console: NOTE+
+    to_text() %>% on_local("debug.log", lower = DEBUG),  # File: DEBUG+
+    to_teams(webhook_url = "...", lower = ERROR)   # Teams: ERROR+
+  )
+
+log(DEBUG("Detailed debug info"))     # File only
+log(NOTE("User action"))               # Console + File
+log(ERROR("Critical error"))           # All three receivers
+```
+
+### 7. Hierarchical Event Levels
+
+**Flexible level system:**
+```r
+# Built-in levels (0-100 scale)
+LOWEST()    # 0
+TRACE()     # 10
+DEBUG()     # 20
+NOTE()      # 30
+MESSAGE()   # 40
+WARNING()   # 60
+ERROR()     # 80
+CRITICAL()  # 90
+HIGHEST()   # 100
+
+# Custom levels
+AUDIT <- log_event_level("AUDIT", 35)
+SECURITY <- log_event_level("SECURITY", 75)
+
+log(AUDIT("User permission change", user = "admin"))
+log(SECURITY("Failed login attempt", ip = "1.2.3.4"))
+```
+
+---
+
+## Migration Strategy
+
+### Step 1: Install and Load
+
+```r
+install.packages("logthis")  # When on CRAN
+# Or from GitHub:
+# remotes::install_github("iqis/logthis")
+
+library(logthis)
+library(magrittr)  # For %>% pipe
+```
+
+### Step 2: Create Equivalent Logger
+
+**Example: Replacing futile.logger setup**
+
+Before:
+```r
+library(futile.logger)
+flog.threshold(INFO)
+flog.appender(appender.file("app.log"))
+```
+
+After:
+```r
+library(logthis)
+library(magrittr)
+
+log <- logger() %>%
+  with_limits(lower = NOTE) %>%
+  with_receivers(
+    to_text() %>% on_local("app.log")
+  )
+```
+
+### Step 3: Replace Logging Calls
+
+**Search and replace patterns:**
+
+```r
+# futile.logger → logthis
+flog.info("Message")           → log(NOTE("Message"))
+flog.warn("Warning")           → log(WARNING("Warning"))
+flog.error("Error")            → log(ERROR("Error"))
+
+# logger → logthis
+log_info("Message")            → log_this(NOTE("Message"))
+log_warn("Warning")            → log_this(WARNING("Warning"))
+log_error("Error")             → log_this(ERROR("Error"))
+
+# log4r → logthis
+info(logger, "Message")        → log(NOTE("Message"))
+warn(logger, "Warning")        → log(WARNING("Warning"))
+error(logger, "Error")         → log(ERROR("Error"))
+```
+
+### Step 4: Test and Validate
+
+```r
+# Verify logging works
+log(NOTE("Migration test"))
+log(WARNING("Test warning"))
+log(ERROR("Test error"))
+
+# Check log files
+readLines("app.log", n = 10)
+```
+
+### Step 5: Leverage New Features
+
+Once migrated, enhance with logthis-specific features:
+
+```r
+# Add structured fields
+log(NOTE("User login", user_id = 12345, ip = "192.168.1.100"))
+
+# Add tagging
+log <- log %>% with_tags("production", "api-v2")
+
+# Add async for performance
+log <- logger() %>%
+  with_receivers(
+    to_text() %>% on_local("app.log") %>% as_async()
+  )
+
+# Add enterprise receivers
+log <- log %>% with_receivers(
+  to_teams(webhook_url = Sys.getenv("TEAMS_WEBHOOK"), lower = ERROR)
+)
+```
+
+---
+
+## Common Patterns
+
+### Pattern 1: Console + File Logging
+
+**Other packages:**
+```r
+# logger
+log_appender(appender_console)
+log_appender(appender_file("app.log"))
+
+# log4r
+logger <- logger(appenders = list(
+  console_appender(),
+  file_appender("app.log")
+))
+
+# futile.logger
+flog.appender(appender.console())
+flog.appender(appender.file("app.log"))
+```
+
+**logthis:**
+```r
+log <- logger() %>%
+  with_receivers(
+    to_console(),
+    to_text() %>% on_local("app.log")
+  )
+```
+
+### Pattern 2: Different Levels to Different Outputs
+
+**Other packages:**
+- Not easily supported (requires multiple loggers)
+
+**logthis:**
+```r
+log <- logger() %>%
+  with_receivers(
+    to_console(lower = NOTE),                      # Console: all
+    to_text() %>% on_local("errors.log", lower = ERROR),  # File: errors only
+    to_teams(webhook_url = "...", lower = CRITICAL)       # Teams: critical only
+  )
+```
+
+### Pattern 3: JSON Logging
+
+**Other packages:**
+- Requires custom formatters/layouts
+
+**logthis:**
+```r
+log <- logger() %>%
+  with_receivers(
+    to_json() %>% on_local("events.jsonl")
+  )
+
+log(NOTE("User login", user_id = 12345, ip = "192.168.1.100"))
+```
+
+Output:
+```json
+{"time":"2025-10-08T10:30:15","level":"NOTE","level_number":30,"message":"User login","user_id":12345,"ip":"192.168.1.100"}
+```
+
+---
+
+## Troubleshooting
+
+### Issue 1: "Can't find log_this"
+
+**Solution:** Load package and optionally assign default logger
+```r
+library(logthis)
+
+# Use built-in log_this
+log_this(NOTE("Message"))
+
+# Or create custom logger
+my_log <- logger() %>% with_receivers(to_console())
+my_log(NOTE("Message"))
+```
+
+### Issue 2: "Events not appearing in file"
+
+**Solution:** Check receiver configuration
+```r
+# Ensure receiver is configured
+log <- logger() %>%
+  with_receivers(
+    to_text() %>% on_local("app.log")  # Must specify on_local()
+  )
+
+# Check file was created
+file.exists("app.log")
+
+# Check file contents
+readLines("app.log")
+```
+
+### Issue 3: "Performance slower than expected"
+
+**Solution:** Use async logging
+```r
+# Synchronous (slow for high volume)
+log <- logger() %>% with_receivers(
+  to_text() %>% on_local("app.log")
+)
+
+# Asynchronous (fast)
+log <- logger() %>% with_receivers(
+  to_text() %>% on_local("app.log") %>% as_async()
+)
+```
+
+---
+
+## Getting Help
+
+- **Documentation:** `?logthis`, `?logger`, `?with_receivers`
+- **Vignettes:**
+  - `vignette("getting-started", package = "logthis")`
+  - `vignette("advanced-receivers", package = "logthis")`
+- **GitHub Issues:** https://github.com/iqis/logthis/issues
+- **Performance Guide:** `benchmarks/README.md` in package directory
+
+---
+
+## Summary
+
+**Why migrate to logthis?**
+
+1. **Structured logging** - Custom fields for rich context
+2. **Async logging** - Non-blocking, high-performance (v0.2.0)
+3. **Flexible filtering** - Two-level (logger + receiver)
+4. **Enterprise integrations** - Teams, Syslog, S3, Azure, Parquet
+5. **Tagging system** - Organize and filter logs
+6. **Functional composition** - Pipe-friendly, explicit configuration
+7. **Modern architecture** - No global state, multiple loggers per session
+
+**Migration is straightforward:**
+- Similar concepts (levels, appenders/receivers, thresholds/limits)
+- Familiar syntax with improvements
+- Can migrate incrementally (one logger at a time)
+- Immediate access to advanced features
+
+**Next steps:**
+1. Install logthis
+2. Read `vignette("getting-started")`
+3. Replace one logger as a test
+4. Validate logging works
+5. Gradually migrate remaining loggers
+6. Enhance with logthis-specific features
