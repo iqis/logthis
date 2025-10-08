@@ -1,7 +1,15 @@
 {
   "name": "R Development Environment for logthis",
   "build": {
-    "dockerfile": "Dockerfile"
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "version": "latest",
+      "moby": true,
+      "dockerDashComposeVersion": "v2"
+    }
   },
   "postCreateCommand": "bash .devcontainer/post-create.sh",
   "customizations": {
@@ -17,7 +25,7 @@
       }
     }
   },
-  "forwardPorts": [8000, 3838],
+  "forwardPorts": [8000, 3838, 4566, 10000],
   "portsAttributes": {
     "8000": {
       "label": "Development Server",
@@ -26,6 +34,17 @@
     "3838": {
       "label": "Shiny App",
       "onAutoForward": "notify"
+    },
+    "4566": {
+      "label": "LocalStack (S3)",
+      "onAutoForward": "silent"
+    },
+    "10000": {
+      "label": "Azurite (Azure Blob)",
+      "onAutoForward": "silent"
     }
-  }
+  },
+  "mounts": [
+    "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"
+  ]
 }
