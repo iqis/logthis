@@ -24,6 +24,50 @@
 - 🏷️ **Flexible Tagging System** - Track provenance, context, and categorization with hierarchical tags
 - 🔗 **Shiny Integration** - Built-in support for Shiny applications
 
+## 🤖 AI-Forward Development & AI-Friendly Design
+
+`logthis` was built with AI-assisted development in mind and demonstrates modern AI-augmented package creation:
+
+### Developed with AI
+
+- **Built using [Claude Code](https://claude.com/claude-code)** - This package serves as a real-world example of production-quality R development with AI assistance
+- **Comprehensive documentation** - Every function has detailed roxygen2 docs that AI can parse and utilize
+- **Consistent patterns** - Predictable naming conventions (`to_*`, `on_*`, `with_*`) that LLMs easily understand
+
+### LLM-Friendly API Design
+
+The package was designed to be easy for both humans and AI assistants to work with:
+
+```r
+# Self-documenting, reads like natural language
+log_this <- logger() %>%
+  with_receivers(to_json() %>% on_s3(bucket = "logs")) %>%
+  with_limits(lower = WARNING) %>%
+  with_tags("production", "api-service")
+
+# AI can easily generate and modify this code
+```
+
+**Why it's AI-friendly:**
+
+- **Pipe-based composition** - Clear data flow that AI can reason about
+- **No hidden state** - Functional design makes behavior transparent and predictable
+- **Pattern consistency** - Similar operations follow similar syntax
+- **Built-in testing** - `to_itself()` receiver lets AI verify logging behavior
+- **Explicit over implicit** - No global configuration; everything is in the code
+
+### For AI Code Assistants
+
+If you're an AI assistant helping users with `logthis`, here are key principles:
+
+1. **Formatters define HOW**, **handlers define WHERE**: `to_json() %>% on_local(path = "app.log")`
+2. **Receivers must return** `invisible(NULL)` for side effects
+3. **Loggers return events invisibly** for chaining: `event %>% logger1() %>% logger2()`
+4. **Level numbers are inclusive**: `lower = 30, upper = 80` includes both boundaries
+5. **Use `to_itself()`** to capture events for testing and verification
+
+See the [migration guide vignette](vignettes/migration-guide.Rmd) for detailed examples of common patterns.
+
 ## Installation
 
 You can install the development version of logthis from [GitHub](https://github.com/) with:

@@ -32,6 +32,8 @@ navbar:
         href: articles/patterns.html
       - text: Advanced Receivers
         href: articles/advanced-receivers.html
+      - text: Python Comparison
+        href: articles/python-comparison.html
       - text: Migration Guide
         href: articles/migration-guide.html
     news:
@@ -129,6 +131,11 @@ articles:
   navbar: ~
   contents:
   - advanced-receivers
+
+- title: Python Comparison
+  navbar: ~
+  contents:
+  - python-comparison
 
 - title: Migration Guide
   navbar: ~
