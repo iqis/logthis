@@ -43,8 +43,11 @@ renv/staging/
 \#*\#
 .\#*
 
-# Scratch notes (track file but ignore changes)
+# Scratch notes and one-off test scripts
 scratch.md
+test_*.R
+build_package.R
+check-renv.R
 
 # R session data
 .RData
