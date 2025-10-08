@@ -2,6 +2,7 @@ url: https://iqis.github.io/logthis/
 
 template:
   bootstrap: 5
+  bootswatch: flatly
   
 home:
   title: "logthis • Structured Logging Framework for R"
