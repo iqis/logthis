@@ -47,7 +47,6 @@ reference:
   desc: Essential functions for creating and configuring loggers
   contents:
   - logger
-  - void_logger
   - with_receivers
   - with_limits
   - with_tags
@@ -60,11 +59,13 @@ reference:
   contents:
   - log_event_level
   - LOWEST
-  - CHATTER
+  - TRACE
+  - DEBUG
   - NOTE
   - MESSAGE
   - WARNING
   - ERROR
+  - CRITICAL
   - HIGHEST
 
 - title: Console & Display Receivers
@@ -101,7 +102,6 @@ reference:
   desc: Receivers for testing and development
   contents:
   - to_identity
-  - to_itself
   - to_void
 
 - title: Utilities

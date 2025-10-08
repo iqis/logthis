@@ -14,7 +14,7 @@ Description: A flexible, structured logging framework for R applications.
     for R packages, Shiny applications, and data analysis pipelines requiring 
     enterprise-level logging capabilities.
 License: MIT + file LICENSE
-URL: https://github.com/iqis/logthis
+URL: https://iqis.github.io/logthis/, https://github.com/iqis/logthis
 BugReports: https://github.com/iqis/logthis/issues
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
