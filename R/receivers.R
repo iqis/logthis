@@ -219,6 +219,378 @@ to_json <- function(pretty = FALSE) {
   fmt_func
 }
 
+#' Create a CSV formatter
+#'
+#' Creates a formatter that converts log events to CSV (Comma-Separated Values) format.
+#' Each event becomes one CSV row. Must be paired with a backend via on_*() functions.
+#'
+#' @section CSV Schema:
+#' Standard column order (always present):
+#' 1. **time** - Event timestamp (ISO 8601 string)
+#' 2. **level** - Event level name (e.g., "WARNING")
+#' 3. **level_number** - Numeric level value (e.g., 60)
+#' 4. **message** - The log message text
+#' 5. **tags** - Pipe-delimited tags (e.g., "api|database" or empty string)
+#' 6. **Custom fields** - Dynamically added columns for custom event fields
+#'
+#' @section CSV Formatting:
+#' - **Separator**: Configurable (default: comma)
+#' - **Quoting**: Automatic for strings containing separator, quotes, or newlines
+#' - **Header row**: Optional, written once at start (default: TRUE)
+#' - **Tags**: Collapsed with pipe separator to avoid nested quoting
+#' - **NA handling**: Configurable NA string (default: "NA")
+#'
+#' @param separator Field separator (default: ",")
+#' @param quote Quote character (default: "\"")
+#' @param headers Write header row (default: TRUE)
+#' @param na_string String representation of NA values (default: "NA")
+#'
+#' @return log formatter; <log_formatter>
+#' @export
+#' @family formatters
+#'
+#' @section Type Contract:
+#' ```
+#' to_csv(separator: string = ",", quote: string = "\"",
+#'        headers: logical = TRUE, na_string: string = "NA") -> log_formatter
+#'   where log_formatter is enriched by on_*() handlers
+#' ```
+#'
+#' @examples
+#' # Basic CSV to local file
+#' to_csv() %>% on_local(path = "app.csv")
+#'
+#' # Tab-separated values
+#' to_csv(separator = "\t") %>% on_local(path = "app.tsv")
+#'
+#' # CSV to S3 (no headers for append to existing file)
+#' to_csv(headers = FALSE) %>% on_s3(bucket = "logs", key_prefix = "app")
+#'
+#' # Custom separator and NA handling
+#' to_csv(separator = ";", na_string = "") %>% on_local(path = "app.csv")
+to_csv <- function(separator = ",",
+                   quote = "\"",
+                   headers = TRUE,
+                   na_string = "NA") {
+  # Validate parameters
+  if (!is.character(separator) || length(separator) != 1) {
+    stop("`separator` must be a single character string")
+  }
+  if (!is.character(quote) || length(quote) != 1) {
+    stop("`quote` must be a single character string")
+  }
+  if (!is.logical(headers) || length(headers) != 1) {
+    stop("`headers` must be TRUE or FALSE")
+  }
+
+  # Track whether we've written headers yet (closure state)
+  headers_written <- FALSE
+
+  # Helper function to escape CSV fields
+  escape_csv_field <- function(value, sep, quo) {
+    if (is.na(value)) {
+      return(na_string)
+    }
+
+    value_str <- as.character(value)
+
+    # Quote if contains separator, quote, or newline
+    needs_quoting <- grepl(paste0("[", sep, quo, "\n\r]"), value_str, fixed = FALSE)
+
+    if (needs_quoting) {
+      # Escape quotes by doubling them
+      value_str <- gsub(quo, paste0(quo, quo), value_str, fixed = TRUE)
+      value_str <- paste0(quo, value_str, quo)
+    }
+
+    value_str
+  }
+
+  fmt_func <- formatter(function(event) {
+    # Standard fields in fixed order
+    time_str <- escape_csv_field(as.character(event$time), separator, quote)
+    level_str <- escape_csv_field(event$level_class, separator, quote)
+    level_num_str <- escape_csv_field(event$level_number, separator, quote)
+    message_str <- escape_csv_field(event$message, separator, quote)
+
+    # Tags: pipe-delimited string
+    if (!is.null(event$tags) && length(event$tags) > 0) {
+      tags_str <- escape_csv_field(paste(event$tags, collapse = "|"), separator, quote)
+    } else {
+      tags_str <- escape_csv_field("", separator, quote)
+    }
+
+    # Custom fields (order by field name for consistency)
+    custom_fields <- setdiff(names(event),
+                             c("time", "level_class", "level_number",
+                               "message", "tags"))
+    custom_fields <- sort(custom_fields)  # Alphabetical order
+
+    custom_values <- character(0)
+    if (length(custom_fields) > 0) {
+      custom_values <- sapply(custom_fields, function(field) {
+        field_value <- event[[field]]
+        # Only handle atomic single values
+        if (is.atomic(field_value) && length(field_value) == 1) {
+          escape_csv_field(field_value, separator, quote)
+        } else {
+          escape_csv_field(NA, separator, quote)  # NA for complex types
+        }
+      })
+    }
+
+    # Build CSV row
+    row_values <- c(time_str, level_str, level_num_str, message_str, tags_str, custom_values)
+    csv_row <- paste(row_values, collapse = separator)
+
+    # Build header row if needed
+    output <- character(0)
+    if (headers && !headers_written) {
+      header_names <- c("time", "level", "level_number", "message", "tags", custom_fields)
+      header_row <- paste(sapply(header_names, function(n) {
+        escape_csv_field(n, separator, quote)
+      }), collapse = separator)
+      output <- c(header_row, csv_row)
+      headers_written <<- TRUE  # Update closure state
+    } else {
+      output <- csv_row
+    }
+
+    # Return as single string with newlines
+    paste(output, collapse = "\n")
+  })
+
+  # Attach config
+  attr(fmt_func, "config") <- list(format_type = "csv",
+                                    separator = separator,
+                                    quote = quote,
+                                    headers = headers,
+                                    na_string = na_string,
+                                    backend = NULL,
+                                    backend_config = list(),
+                                    lower = NULL,
+                                    upper = NULL)
+
+  fmt_func
+}
+
+#' Create a Parquet formatter (buffered)
+#'
+#' Creates a formatter that converts log events to Apache Parquet columnar format.
+#' **Requires buffering** - events are accumulated into a data frame and written in
+#' batches. Must be paired with a backend via on_*() functions.
+#'
+#' **Note**: Requires the `arrow` package. Install with `install.packages('arrow')`.
+#'
+#' @section Parquet Schema:
+#' - **time**: timestamp[ms, UTC]
+#' - **level**: string
+#' - **level_number**: int32
+#' - **message**: string
+#' - **tags**: list<string> (Arrow list column)
+#' - **Custom fields**: Dynamically typed based on first occurrence
+#'
+#' @section Buffering Behavior:
+#' - Events accumulated in memory until `flush_threshold` reached
+#' - Handlers (on_local, on_s3, on_azure) detect buffering requirement
+#' - Arrow dataset API used for appending to existing files
+#' - Compression applied at write time (not during buffering)
+#'
+#' @param compression Compression codec ("snappy", "gzip", "zstd", "lz4", "none")
+#' @return log formatter; <log_formatter>
+#' @export
+#' @family formatters
+#'
+#' @section Type Contract:
+#' ```
+#' to_parquet(compression: string = "snappy") -> log_formatter
+#'   where log_formatter is enriched by on_*() handlers
+#'   NOTE: This formatter requires buffering (requires_buffering = TRUE)
+#' ```
+#'
+#' @examples
+#' \dontrun{
+#' # Basic Parquet to local file (with buffering)
+#' to_parquet() %>% on_local(path = "app.parquet", flush_threshold = 1000)
+#'
+#' # Custom compression
+#' to_parquet(compression = "zstd") %>%
+#'   on_local(path = "app.parquet", flush_threshold = 500)
+#'
+#' # Parquet to S3 (efficient for analytics)
+#' to_parquet(compression = "snappy") %>%
+#'   on_s3(bucket = "logs", key_prefix = "events", flush_threshold = 1000)
+#' }
+to_parquet <- function(compression = "snappy") {
+  # Check if arrow is available
+  if (!requireNamespace("arrow", quietly = TRUE)) {
+    stop("arrow package is required for to_parquet() but is not installed.\n",
+         "  Solution: Install with install.packages('arrow')\n",
+         "  Or: Use to_csv() for tabular logging instead")
+  }
+
+  # Validate compression
+  valid_compression <- c("snappy", "gzip", "zstd", "lz4", "none")
+  if (!compression %in% valid_compression) {
+    stop("`compression` must be one of: ", paste(valid_compression, collapse = ", "),
+         "\n  Got: ", compression)
+  }
+
+  fmt_func <- formatter(function(event) {
+    # Convert event to single-row data frame
+    # Arrow will handle type conversion and list columns
+
+    row_data <- data.frame(
+      time = event$time,
+      level = event$level_class,
+      level_number = as.integer(event$level_number),
+      message = event$message,
+      stringsAsFactors = FALSE
+    )
+
+    # Add tags as list column (Arrow native format)
+    if (!is.null(event$tags) && length(event$tags) > 0) {
+      row_data$tags <- I(list(event$tags))  # Use I() to preserve list structure
+    } else {
+      row_data$tags <- I(list(character(0)))
+    }
+
+    # Add custom fields
+    custom_fields <- setdiff(names(event),
+                             c("time", "level_class", "level_number",
+                               "message", "tags"))
+    for (field in custom_fields) {
+      field_value <- event[[field]]
+      # Only add atomic values (skip complex types)
+      if (is.atomic(field_value) && length(field_value) == 1) {
+        row_data[[field]] <- field_value
+      }
+    }
+
+    row_data
+  })
+
+  # Attach config with buffering flag
+  attr(fmt_func, "config") <- list(
+    format_type = "parquet",
+    compression = compression,
+    requires_buffering = TRUE,  # IMPORTANT: Handlers must buffer
+    backend = NULL,
+    backend_config = list(),
+    lower = NULL,
+    upper = NULL
+  )
+
+  fmt_func
+}
+
+#' Create a Feather formatter (buffered)
+#'
+#' Creates a formatter that converts log events to Apache Arrow IPC (Feather) format.
+#' **Requires buffering** - events are accumulated into a data frame and written in
+#' batches. Optimized for R ↔ Python data exchange.
+#'
+#' **Note**: Requires the `arrow` package. Install with `install.packages('arrow')`.
+#'
+#' @section Feather Schema:
+#' - **time**: timestamp[ms, UTC]
+#' - **level**: string
+#' - **level_number**: int32
+#' - **message**: string
+#' - **tags**: list<string> (Arrow list column)
+#' - **Custom fields**: Dynamically typed based on first occurrence
+#'
+#' @section Buffering Behavior:
+#' - Events accumulated in memory until `flush_threshold` reached
+#' - Handlers (on_local, on_s3, on_azure) detect buffering requirement
+#' - Arrow IPC format preserves exact R types for Python interop
+#' - Compression applied at write time (not during buffering)
+#'
+#' @param compression Compression codec ("lz4", "zstd", "none")
+#' @return log formatter; <log_formatter>
+#' @export
+#' @family formatters
+#'
+#' @section Type Contract:
+#' ```
+#' to_feather(compression: string = "lz4") -> log_formatter
+#'   where log_formatter is enriched by on_*() handlers
+#'   NOTE: This formatter requires buffering (requires_buffering = TRUE)
+#' ```
+#'
+#' @examples
+#' \dontrun{
+#' # Basic Feather to local file (with buffering)
+#' to_feather() %>% on_local(path = "app.feather", flush_threshold = 1000)
+#'
+#' # Custom compression
+#' to_feather(compression = "zstd") %>%
+#'   on_local(path = "app.feather", flush_threshold = 500)
+#'
+#' # Feather for Python interop
+#' to_feather(compression = "lz4") %>%
+#'   on_s3(bucket = "logs", key_prefix = "events", flush_threshold = 1000)
+#' }
+to_feather <- function(compression = "lz4") {
+  # Check if arrow is available
+  if (!requireNamespace("arrow", quietly = TRUE)) {
+    stop("arrow package is required for to_feather() but is not installed.\n",
+         "  Solution: Install with install.packages('arrow')\n",
+         "  Or: Use to_csv() for tabular logging instead")
+  }
+
+  # Validate compression (Feather supports fewer options than Parquet)
+  valid_compression <- c("lz4", "zstd", "none")
+  if (!compression %in% valid_compression) {
+    stop("`compression` must be one of: ", paste(valid_compression, collapse = ", "),
+         "\n  Got: ", compression)
+  }
+
+  fmt_func <- formatter(function(event) {
+    # Convert event to single-row data frame (same as Parquet)
+    row_data <- data.frame(
+      time = event$time,
+      level = event$level_class,
+      level_number = as.integer(event$level_number),
+      message = event$message,
+      stringsAsFactors = FALSE
+    )
+
+    # Add tags as list column
+    if (!is.null(event$tags) && length(event$tags) > 0) {
+      row_data$tags <- I(list(event$tags))
+    } else {
+      row_data$tags <- I(list(character(0)))
+    }
+
+    # Add custom fields
+    custom_fields <- setdiff(names(event),
+                             c("time", "level_class", "level_number",
+                               "message", "tags"))
+    for (field in custom_fields) {
+      field_value <- event[[field]]
+      if (is.atomic(field_value) && length(field_value) == 1) {
+        row_data[[field]] <- field_value
+      }
+    }
+
+    row_data
+  })
+
+  # Attach config with buffering flag
+  attr(fmt_func, "config") <- list(
+    format_type = "feather",
+    compression = compression,
+    requires_buffering = TRUE,  # IMPORTANT: Handlers must buffer
+    backend = NULL,
+    backend_config = list(),
+    lower = NULL,
+    upper = NULL
+  )
+
+  fmt_func
+}
+
 # Dummy receivers, mainly for testing
 #' Identity receiver for testing
 #'
@@ -284,7 +656,8 @@ on_local <- function(formatter,
                      path,
                      append = TRUE,
                      max_size = NULL,
-                     max_files = 5) {
+                     max_files = 5,
+                     flush_threshold = 1000) {
   if (!inherits(formatter, "log_formatter")) {
     stop("`formatter` must be a log_formatter created by to_text(), to_json(), etc.\n",
          "  Got: ", class(formatter)[1], "\n",
@@ -295,13 +668,19 @@ on_local <- function(formatter,
 
   config <- attr(formatter, "config")
 
-  # Validate rotation config
+  # Validate rotation config (for line-based formats)
   if (!is.null(max_size)) {
     stopifnot(is.numeric(max_size), max_size > 0)
   }
   if (!is.null(max_files)) {
     stopifnot(is.numeric(max_files), max_files > 0)
     max_files <- as.integer(max_files)
+  }
+
+  # Validate flush_threshold (for buffered formats like Parquet/Feather)
+  if (!is.null(flush_threshold)) {
+    stopifnot(is.numeric(flush_threshold), flush_threshold > 0)
+    flush_threshold <- as.integer(flush_threshold)
   }
 
   # Clear file if not appending
@@ -311,10 +690,13 @@ on_local <- function(formatter,
 
   # Enrich config with handler info
   config$backend <- "local"
-  config$backend_config <- list(path = path,
-                                 append = append,
-                                 max_size = max_size,
-                                 max_files = max_files)
+  config$backend_config <- list(
+    path = path,
+    append = append,
+    max_size = max_size,
+    max_files = max_files,
+    flush_threshold = flush_threshold
+  )
 
   # Return enriched formatter
   attr(formatter, "config") <- config
@@ -494,6 +876,142 @@ on_azure <- function(formatter,
   formatter
 }
 
+#' Attach webhook (HTTP) handler to formatter
+#'
+#' Configures a formatter to POST formatted log events to an HTTP endpoint.
+#' Supports custom headers, authentication, and retry logic. Works with any
+#' formatter (text, JSON, CSV, etc.).
+#'
+#' **Note**: Requires the `httr2` package. Install with `install.packages('httr2')`.
+#'
+#' @section HTTP Behavior:
+#' - Each event is formatted and sent immediately (no buffering by default)
+#' - Uses POST method by default (configurable via `method`)
+#' - Automatic retry with exponential backoff (configurable via `max_tries`)
+#' - Timeout: 30 seconds default (configurable via `timeout_seconds`)
+#' - Failed requests logged as warnings (does not crash receiver)
+#'
+#' @section Authentication:
+#' Pass auth via custom headers:
+#' - Bearer token: `headers = list(Authorization = "Bearer YOUR_TOKEN")`
+#' - API key: `headers = list("X-API-Key" = "YOUR_KEY")`
+#' - Basic auth: Use httr2::req_auth_basic() in future (not yet supported)
+#'
+#' @param formatter A log formatter from to_text(), to_json(), etc.
+#' @param url HTTP endpoint URL (full URL including protocol)
+#' @param method HTTP method (default: "POST")
+#' @param headers Named list of HTTP headers (e.g., `list(Authorization = "Bearer token")`)
+#' @param content_type Content-Type header (default: "text/plain" for to_text(), "application/json" for to_json())
+#' @param timeout_seconds Request timeout in seconds (default: 30)
+#' @param max_tries Maximum number of retry attempts (default: 3)
+#' @param ... Additional arguments (reserved for future use)
+#' @return Enriched log formatter; <log_formatter>
+#' @export
+#' @family handlers
+#'
+#' @section Type Contract:
+#' ```
+#' on_webhook(formatter: log_formatter, url: string, method: string = "POST",
+#'            headers: list = NULL, content_type: string = NULL,
+#'            timeout_seconds: numeric = 30, max_tries: numeric = 3) -> log_formatter
+#' ```
+#'
+#' @examples
+#' \dontrun{
+#' # Basic webhook (text format)
+#' to_text() %>% on_webhook(url = "https://example.com/logs")
+#'
+#' # JSON to webhook with auth
+#' to_json() %>% on_webhook(
+#'   url = "https://api.example.com/events",
+#'   headers = list(Authorization = "Bearer YOUR_TOKEN"),
+#'   max_tries = 5
+#' )
+#'
+#' # Microsoft Teams (use to_teams() instead for MessageCard format)
+#' to_json() %>% on_webhook(
+#'   url = "https://outlook.office.com/webhook/...",
+#'   content_type = "application/json"
+#' )
+#'
+#' # Use in logger
+#' log_this <- logger() %>%
+#'   with_receivers(
+#'     to_console(),
+#'     to_json() %>% on_webhook(url = "https://logs.example.com/ingest")
+#'   )
+#' }
+on_webhook <- function(formatter,
+                       url,
+                       method = "POST",
+                       headers = NULL,
+                       content_type = NULL,
+                       timeout_seconds = 30,
+                       max_tries = 3,
+                       ...) {
+  if (!inherits(formatter, "log_formatter")) {
+    stop("`formatter` must be a log_formatter created by to_text(), to_json(), etc.\n",
+         "  Got: ", class(formatter)[1], "\n",
+         "  Solution: Use to_text() or to_json() to create formatter first\n",
+         "  Example: to_json() %>% on_webhook(url = \"https://example.com/logs\")")
+  }
+
+  # Validate URL
+  if (!is.character(url) || length(url) != 1 || url == "") {
+    stop("`url` must be a non-empty character string")
+  }
+
+  # Validate URL format (basic check)
+  if (!grepl("^https?://", url, ignore.case = TRUE)) {
+    stop("`url` must start with http:// or https://\n",
+         "  Got: ", url, "\n",
+         "  Example: https://example.com/webhook")
+  }
+
+  # Validate method
+  valid_methods <- c("POST", "PUT", "PATCH")
+  method <- toupper(method)
+  if (!method %in% valid_methods) {
+    stop("`method` must be one of: ", paste(valid_methods, collapse = ", "), "\n",
+         "  Got: ", method)
+  }
+
+  # Validate timeout
+  if (!is.numeric(timeout_seconds) || timeout_seconds <= 0) {
+    stop("`timeout_seconds` must be a positive number")
+  }
+
+  # Validate max_tries
+  if (!is.numeric(max_tries) || max_tries < 1) {
+    stop("`max_tries` must be >= 1")
+  }
+
+  # Auto-detect content_type from formatter if not specified
+  if (is.null(content_type)) {
+    format_type <- attr(formatter, "config")$format_type
+    content_type <- switch(format_type,
+                           "text" = "text/plain",
+                           "json" = "application/json",
+                           "text/plain")  # default
+  }
+
+  config <- attr(formatter, "config")
+
+  config$backend <- "webhook"
+  config$backend_config <- list(
+    url = url,
+    method = method,
+    headers = headers,
+    content_type = content_type,
+    timeout_seconds = timeout_seconds,
+    max_tries = as.integer(max_tries),
+    extra_args = list(...)
+  )
+
+  attr(formatter, "config") <- config
+  formatter
+}
+
 # ============================================================================
 # INTERNAL: Formatter → Receiver Conversion
 # ============================================================================
@@ -560,6 +1078,12 @@ on_azure <- function(formatter,
 
 # Build local filesystem receiver
 .build_local_receiver <- function(formatter, config) {
+  # Check if formatter requires buffering (Parquet/Feather)
+  if (isTRUE(config$requires_buffering)) {
+    return(.build_buffered_local_receiver(formatter, config))
+  }
+
+  # Standard line-by-line receiver (text/JSON/CSV)
   bc <- config$backend_config
 
   receiver(function(event) {
@@ -587,6 +1111,131 @@ on_azure <- function(formatter,
 
     invisible(NULL)
   })
+}
+
+# Build buffered local filesystem receiver (for Parquet/Feather)
+.build_buffered_local_receiver <- function(formatter, config) {
+  bc <- config$backend_config
+  format_type <- config$format_type
+
+  # Check if arrow package is available
+  if (!requireNamespace("arrow", quietly = TRUE)) {
+    stop("Package 'arrow' required for ", format_type, " format.\n",
+         "  Solution: Install with install.packages('arrow')\n",
+         "  Or: Use to_csv() or to_json() instead")
+  }
+
+  # Initialize buffer (data frame accumulator)
+  buffer_df <- NULL
+  flush_threshold <- bc$flush_threshold %||% 1000  # Default to 1000 events
+
+  # Flush function - writes accumulated data frame to file
+  flush <- function(force = FALSE) {
+    if (is.null(buffer_df) || nrow(buffer_df) == 0) {
+      return(invisible(NULL))
+    }
+
+    tryCatch({
+      # Convert to Arrow Table for writing
+      arrow_table <- arrow::as_arrow_table(buffer_df)
+
+      if (format_type == "parquet") {
+        # Write Parquet file
+        if (file.exists(bc$path) && isTRUE(bc$append)) {
+          # Append to existing Parquet file using dataset API
+          existing_ds <- arrow::open_dataset(bc$path, format = "parquet")
+          combined <- rbind(
+            as.data.frame(existing_ds),
+            buffer_df
+          )
+          arrow::write_parquet(
+            combined,
+            bc$path,
+            compression = config$compression
+          )
+        } else {
+          # Write new file
+          arrow::write_parquet(
+            arrow_table,
+            bc$path,
+            compression = config$compression
+          )
+        }
+      } else if (format_type == "feather") {
+        # Write Feather file
+        if (file.exists(bc$path) && isTRUE(bc$append)) {
+          # Feather doesn't support direct append, so read + combine + write
+          existing_df <- arrow::read_feather(bc$path)
+          combined <- rbind(existing_df, buffer_df)
+          arrow::write_feather(
+            combined,
+            bc$path,
+            compression = config$compression
+          )
+        } else {
+          # Write new file
+          arrow::write_feather(
+            arrow_table,
+            bc$path,
+            compression = config$compression
+          )
+        }
+      }
+
+      # Clear buffer on success
+      buffer_df <<- NULL
+
+    }, error = function(e) {
+      warning("Buffered write failed for ", bc$path, ": ",
+              conditionMessage(e), call. = FALSE)
+    })
+
+    invisible(NULL)
+  }
+
+  # Create receiver with buffering
+  recv <- receiver(function(event) {
+    # Level filtering
+    if (!is.null(config$lower) &&
+        event$level_number < attr(config$lower, "level_number")) {
+      return(invisible(NULL))
+    }
+    if (!is.null(config$upper) &&
+        event$level_number > attr(config$upper, "level_number")) {
+      return(invisible(NULL))
+    }
+
+    # Format event (returns single-row data frame)
+    row_df <- formatter(event)
+
+    # Add to buffer
+    if (is.null(buffer_df)) {
+      buffer_df <<- row_df
+    } else {
+      # Use bind_rows for robust column merging
+      buffer_df <<- tryCatch({
+        dplyr::bind_rows(buffer_df, row_df)
+      }, error = function(e) {
+        # Fallback to rbind if dplyr not available
+        rbind(buffer_df, row_df)
+      })
+    }
+
+    # Auto-flush if threshold reached
+    if (nrow(buffer_df) >= flush_threshold) {
+      flush()
+    }
+
+    invisible(NULL)
+  })
+
+  # Attach flush function and buffer info as attributes
+  attr(recv, "flush") <- flush
+  attr(recv, "get_buffer_size") <- function() {
+    if (is.null(buffer_df)) 0 else nrow(buffer_df)
+  }
+
+  recv
 }
 
 # Build S3 receiver with buffering
@@ -796,10 +1445,574 @@ on_azure <- function(formatter,
   recv
 }
 
+# Build webhook (HTTP) receiver
+.build_webhook_receiver <- function(formatter, config) {
+  bc <- config$backend_config
+
+  # Check package availability
+  if (!requireNamespace("httr2", quietly = TRUE)) {
+    stop("Package 'httr2' required for webhook backend.\n",
+         "  Solution: Install with install.packages('httr2')\n",
+         "  Or: Use on_local() for local file logging instead")
+  }
+
+  receiver(function(event) {
+    # Level filtering (if configured on formatter)
+    if (!is.null(config$lower) &&
+        event$level_number < attr(config$lower, "level_number")) {
+      return(invisible(NULL))
+    }
+    if (!is.null(config$upper) &&
+        event$level_number > attr(config$upper, "level_number")) {
+      return(invisible(NULL))
+    }
+
+    # Format event
+    content <- formatter(event)
+
+    # Build HTTP request using httr2
+    tryCatch({
+      req <- httr2::request(bc$url)
+
+      # Set method
+      req <- switch(bc$method,
+                    "POST" = httr2::req_method(req, "POST"),
+                    "PUT" = httr2::req_method(req, "PUT"),
+                    "PATCH" = httr2::req_method(req, "PATCH"),
+                    httr2::req_method(req, "POST"))  # default
+
+      # Set body and content-type
+      req <- httr2::req_body_raw(req, charToRaw(content))
+      req <- httr2::req_headers(req, `Content-Type` = bc$content_type)
+
+      # Add custom headers
+      if (!is.null(bc$headers) && length(bc$headers) > 0) {
+        req <- httr2::req_headers(req, !!!bc$headers)
+      }
+
+      # Set timeout
+      req <- httr2::req_timeout(req, bc$timeout_seconds)
+
+      # Set retry policy (exponential backoff)
+      if (bc$max_tries > 1) {
+        req <- httr2::req_retry(req,
+                                max_tries = bc$max_tries,
+                                is_transient = function(resp) {
+                                  # Retry on 5xx errors and network errors
+                                  httr2::resp_status(resp) >= 500
+                                })
+      }
+
+      # Perform request
+      resp <- httr2::req_perform(req)
+
+      # Check response (2xx = success)
+      if (httr2::resp_status(resp) < 200 || httr2::resp_status(resp) >= 300) {
+        warning("Webhook request failed with status ", httr2::resp_status(resp),
+                " for URL: ", bc$url, call. = FALSE)
+      }
+
+    }, error = function(e) {
+      warning("Webhook request failed for URL '", bc$url, "': ",
+              conditionMessage(e), call. = FALSE)
+    })
+
+    invisible(NULL)
+  })
+}
+
 # Register built-in backends
 .register_backend("local", .build_local_receiver)
 .register_backend("s3", .build_s3_receiver)
 .register_backend("azure", .build_azure_receiver)
+.register_backend("webhook", .build_webhook_receiver)
+
+# ============================================================================
+# Standalone Receivers (not formatter/handler pattern)
+# ============================================================================
+
+#' Microsoft Teams receiver with MessageCard format
+#'
+#' Sends log events to Microsoft Teams channels via incoming webhook.
+#' Formats events as MessageCard JSON with color-coded visual urgency.
+#' This is a complete receiver - use directly in with_receivers().
+#'
+#' **Note**: Requires the `httr2` and `jsonlite` packages.
+#'
+#' @section MessageCard Format:
+#' Each log event becomes a MessageCard with:
+#' - **Summary**: Card title (from `title` parameter)
+#' - **Theme Color**: Maps to log level (ERROR=crimson, WARNING=orange, etc.)
+#' - **Activity Title**: Log level and message preview
+#' - **Facts**: Timestamp, Level (with number), Tags (if present)
+#' - **Text**: Full log message
+#'
+#' @section Level Color Mapping:
+#' - **CRITICAL/ERROR (80-100)**: Crimson (#DC143C)
+#' - **WARNING (60-79)**: Orange (#FFA500)
+#' - **MESSAGE/NOTE (30-59)**: Steel Blue (#4682B4)
+#' - **DEBUG/TRACE (0-29)**: Gray (#808080)
+#'
+#' @section Creating Teams Webhook:
+#' 1. In Teams channel: ... → Connectors → Incoming Webhook
+#' 2. Name your webhook, optionally add image
+#' 3. Copy the webhook URL
+#' 4. Use URL in `to_teams(webhook_url = "https://...")`
+#'
+#' @param webhook_url Microsoft Teams incoming webhook URL
+#' @param title Card title/summary (default: "Application Log")
+#' @param lower Minimum level to send (inclusive, default: WARNING)
+#' @param upper Maximum level to send (inclusive, default: HIGHEST)
+#' @param timeout_seconds HTTP request timeout (default: 30)
+#' @param max_tries Maximum retry attempts (default: 3)
+#' @param ... Additional arguments (reserved for future use)
+#'
+#' @return log receiver function; <log_receiver>
+#' @export
+#' @family receivers
+#'
+#' @section Type Contract:
+#' ```
+#' to_teams(webhook_url: string, title: string = "Application Log",
+#'          lower: log_event_level = WARNING, upper: log_event_level = HIGHEST,
+#'          timeout_seconds: numeric = 30, max_tries: numeric = 3) -> log_receiver
+#' ```
+#'
+#' @examples
+#' \dontrun{
+#' # Basic Teams receiver (warnings and errors only)
+#' teams_recv <- to_teams(
+#'   webhook_url = "https://outlook.office.com/webhook/..."
+#' )
+#'
+#' # Custom title and all levels
+#' teams_recv <- to_teams(
+#'   webhook_url = "https://outlook.office.com/webhook/...",
+#'   title = "Production API Logs",
+#'   lower = NOTE,
+#'   upper = HIGHEST
+#' )
+#'
+#' # Use in logger
+#' log_this <- logger() %>%
+#'   with_receivers(
+#'     to_console(),
+#'     to_teams(webhook_url = Sys.getenv("TEAMS_WEBHOOK_URL"))
+#'   )
+#'
+#' log_this(ERROR("Database connection failed", db_host = "prod-db-01"))
+#' }
+to_teams <- function(webhook_url,
+                     title = "Application Log",
+                     lower = WARNING,
+                     upper = HIGHEST,
+                     timeout_seconds = 30,
+                     max_tries = 3,
+                     ...) {
+  # Check required packages
+  if (!requireNamespace("httr2", quietly = TRUE)) {
+    stop("Package 'httr2' required for to_teams() receiver.\n",
+         "  Solution: Install with install.packages('httr2')")
+  }
+  if (!requireNamespace("jsonlite", quietly = TRUE)) {
+    stop("Package 'jsonlite' required for to_teams() receiver.\n",
+         "  Solution: Install with install.packages('jsonlite')")
+  }
+
+  # Validate webhook URL
+  if (!is.character(webhook_url) || length(webhook_url) != 1 || webhook_url == "") {
+    stop("`webhook_url` must be a non-empty character string")
+  }
+
+  # Extract level numbers for filtering
+  lower_num <- attr(lower, "level_number")
+  upper_num <- attr(upper, "level_number")
+
+  # Level to color mapping for Teams
+  get_teams_color <- function(level_number) {
+    if (level_number >= 80) {
+      "DC143C"  # Crimson (ERROR, CRITICAL)
+    } else if (level_number >= 60) {
+      "FFA500"  # Orange (WARNING)
+    } else if (level_number >= 30) {
+      "4682B4"  # Steel Blue (NOTE, MESSAGE)
+    } else {
+      "808080"  # Gray (DEBUG, TRACE, LOWEST)
+    }
+  }
+
+  receiver(function(event) {
+    # Level filtering
+    if (event$level_number < lower_num || event$level_number > upper_num) {
+      return(invisible(NULL))
+    }
+
+    # Build MessageCard JSON
+    theme_color <- get_teams_color(event$level_number)
+
+    # Build facts list
+    facts <- list(
+      list(name = "Timestamp", value = as.character(event$time)),
+      list(name = "Level", value = paste0(event$level_class, " (", event$level_number, ")"))
+    )
+
+    # Add tags fact if present
+    if (!is.null(event$tags) && length(event$tags) > 0) {
+      facts <- c(facts, list(list(
+        name = "Tags",
+        value = paste(event$tags, collapse = ", ")
+      )))
+    }
+
+    # Add custom fields as facts
+    custom_fields <- setdiff(names(event),
+                             c("time", "level_class", "level_number",
+                               "message", "tags"))
+    for (field in custom_fields) {
+      field_value <- event[[field]]
+      # Convert to character for display
+      if (is.atomic(field_value) && length(field_value) == 1) {
+        facts <- c(facts, list(list(
+          name = field,
+          value = as.character(field_value)
+        )))
+      }
+    }
+
+    # Build Adaptive Card payload for Power Automate
+    # Reference: https://adaptivecards.io/designer/
+
+    # Build facts for Adaptive Card
+    facts_list <- list()
+    facts_list[[length(facts_list) + 1]] <- list(title = "Level", value = paste0(event$level_class, " (", as.numeric(event$level_number), ")"))
+    facts_list[[length(facts_list) + 1]] <- list(title = "Time", value = as.character(event$time))
+
+    if (!is.null(event$tags) && length(event$tags) > 0) {
+      facts_list[[length(facts_list) + 1]] <- list(title = "Tags", value = paste(event$tags, collapse = ", "))
+    }
+
+    # Add custom fields
+    custom_fields <- setdiff(names(event),
+                             c("time", "level_class", "level_number",
+                               "message", "tags"))
+    for (field in custom_fields) {
+      field_value <- event[[field]]
+      if (is.atomic(field_value) && length(field_value) == 1) {
+        facts_list[[length(facts_list) + 1]] <- list(title = field, value = as.character(field_value))
+      }
+    }
+
+    # Build Adaptive Card
+    payload <- list(
+      type = "message",
+      attachments = list(
+        list(
+          contentType = "application/vnd.microsoft.card.adaptive",
+          contentUrl = NULL,
+          content = list(
+            `$schema` = "http://adaptivecards.io/schemas/adaptive-card.json",
+            type = "AdaptiveCard",
+            version = "1.2",
+            body = list(
+              list(
+                type = "TextBlock",
+                size = "Large",
+                weight = "Bolder",
+                text = paste0("[", event$level_class, "]"),
+                color = if (as.numeric(event$level_number) >= 80) "Attention" else if (as.numeric(event$level_number) >= 60) "Warning" else "Good"
+              ),
+              list(
+                type = "TextBlock",
+                text = event$message,
+                wrap = TRUE
+              ),
+              list(
+                type = "FactSet",
+                facts = facts_list
+              )
+            )
+          )
+        )
+      )
+    )
+
+    # Convert to JSON
+    json_body <- jsonlite::toJSON(payload, auto_unbox = TRUE, pretty = FALSE)
+
+    # Send to Teams via httr2
+    tryCatch({
+      req <- httr2::request(webhook_url)
+      req <- httr2::req_method(req, "POST")
+      req <- httr2::req_body_raw(req, charToRaw(json_body))
+      req <- httr2::req_headers(req, `Content-Type` = "application/json")
+      req <- httr2::req_timeout(req, timeout_seconds)
+
+      # Retry on 5xx errors
+      if (max_tries > 1) {
+        req <- httr2::req_retry(req,
+                                max_tries = max_tries,
+                                is_transient = function(resp) {
+                                  httr2::resp_status(resp) >= 500
+                                })
+      }
+
+      resp <- httr2::req_perform(req)
+
+      # Check response
+      if (httr2::resp_status(resp) < 200 || httr2::resp_status(resp) >= 300) {
+        warning("Teams webhook request failed with status ", httr2::resp_status(resp),
+                call. = FALSE)
+      }
+
+    }, error = function(e) {
+      warning("Teams webhook request failed: ", conditionMessage(e), call. = FALSE)
+    })
+
+    invisible(NULL)
+  })
+}
+
+#' Syslog receiver with RFC 3164/5424 support
+#'
+#' Sends log events to syslog daemon via local socket, UDP, or TCP.
+#' Supports both RFC 3164 (BSD syslog) and RFC 5424 (modern syslog) protocols.
+#' This is a complete receiver - use directly in with_receivers().
+#'
+#' @section Syslog Protocol:
+#' **RFC 3164 (BSD syslog, default):**
+#' ```
+#' <priority>timestamp hostname app_name[pid]: message
+#' ```
+#'
+#' **RFC 5424 (modern):**
+#' ```
+#' <priority>version timestamp hostname app_name pid msgid - message
+#' ```
+#'
+#' @section Level→Severity Mapping:
+#' logthis levels mapped to syslog severities (0-7):
+#' - **0-19 (LOWEST, TRACE)**: debug (7)
+#' - **20-39 (DEBUG)**: debug (7)
+#' - **40-49 (NOTE)**: info (6)
+#' - **50-59 (MESSAGE)**: notice (5)
+#' - **60-79 (WARNING)**: warning (4)
+#' - **80-89 (ERROR)**: error (3)
+#' - **90-99 (CRITICAL)**: critical (2)
+#' - **100 (HIGHEST)**: emergency (0)
+#'
+#' @section Priority Calculation:
+#' Priority = (facility × 8) + severity
+#' - Example: facility="user" (1), severity=error (3) → priority=11
+#'
+#' @param host Syslog server hostname (default: "localhost")
+#' @param port Syslog server port (default: 514 for UDP, ignored for unix socket)
+#' @param protocol Syslog message format: "rfc3164" or "rfc5424" (default: "rfc3164")
+#' @param transport Transport protocol: "udp", "tcp", or "unix" (default: "udp")
+#' @param facility Syslog facility: "user", "local0"-"local7", "daemon", etc. (default: "user")
+#' @param app_name Application name in syslog messages (default: "R")
+#' @param socket_path Path to UNIX domain socket (default: "/dev/log" on Linux)
+#' @param lower Minimum level to send (inclusive, default: LOWEST)
+#' @param upper Maximum level to send (inclusive, default: HIGHEST)
+#' @return log receiver function; <log_receiver>
+#' @export
+#' @family receivers
+#'
+#' @section Type Contract:
+#' ```
+#' to_syslog(host: string = "localhost", port: numeric = 514,
+#'           protocol: string = "rfc3164", transport: string = "udp",
+#'           facility: string = "user", app_name: string = "R",
+#'           lower: log_event_level = LOWEST, upper: log_event_level = HIGHEST) -> log_receiver
+#' ```
+#'
+#' @examples
+#' \dontrun{
+#' # Basic local syslog (UDP to localhost)
+#' syslog_recv <- to_syslog()
+#'
+#' # Remote syslog server with custom facility
+#' syslog_recv <- to_syslog(
+#'   host = "syslog.example.com",
+#'   port = 514,
+#'   facility = "local0",
+#'   app_name = "myapp"
+#' )
+#'
+#' # Modern RFC 5424 format over TCP
+#' syslog_recv <- to_syslog(
+#'   protocol = "rfc5424",
+#'   transport = "tcp"
+#' )
+#'
+#' # Local UNIX socket (Linux/Mac)
+#' syslog_recv <- to_syslog(
+#'   transport = "unix",
+#'   socket_path = "/dev/log"
+#' )
+#'
+#' # Use in logger (errors and warnings only)
+#' log_this <- logger() %>%
+#'   with_receivers(
+#'     to_console(),
+#'     to_syslog(facility = "local1", lower = WARNING)
+#'   )
+#' }
+to_syslog <- function(host = "localhost",
+                      port = 514,
+                      protocol = c("rfc3164", "rfc5424"),
+                      transport = c("udp", "tcp", "unix"),
+                      facility = "user",
+                      app_name = "R",
+                      socket_path = "/dev/log",
+                      lower = LOWEST,
+                      upper = HIGHEST) {
+  # Validate and match arguments
+  protocol <- match.arg(protocol)
+  transport <- match.arg(transport)
+
+  # Extract level numbers for filtering
+  lower_num <- attr(lower, "level_number")
+  upper_num <- attr(upper, "level_number")
+
+  # Syslog facility codes
+  facility_map <- c(
+    "kern" = 0, "user" = 1, "mail" = 2, "daemon" = 3,
+    "auth" = 4, "syslog" = 5, "lpr" = 6, "news" = 7,
+    "uucp" = 8, "cron" = 9, "authpriv" = 10, "ftp" = 11,
+    "local0" = 16, "local1" = 17, "local2" = 18, "local3" = 19,
+    "local4" = 20, "local5" = 21, "local6" = 22, "local7" = 23
+  )
+
+  if (!facility %in% names(facility_map)) {
+    stop("`facility` must be one of: ", paste(names(facility_map), collapse = ", "))
+  }
+  facility_code <- facility_map[[facility]]
+
+  # Log level → syslog severity mapping
+  get_syslog_severity <- function(level_number) {
+    if (level_number >= 100) {
+      0  # emergency
+    } else if (level_number >= 90) {
+      2  # critical
+    } else if (level_number >= 80) {
+      3  # error
+    } else if (level_number >= 60) {
+      4  # warning
+    } else if (level_number >= 50) {
+      5  # notice
+    } else if (level_number >= 40) {
+      6  # info
+    } else {
+      7  # debug
+    }
+  }
+
+  # Open connection based on transport (closure variable)
+  conn <- NULL
+  get_connection <- function() {
+    if (!is.null(conn)) {
+      return(conn)
+    }
+
+    conn <<- tryCatch({
+      if (transport == "unix") {
+        # UNIX domain socket
+        socketConnection(
+          host = socket_path,
+          open = "w+b",
+          blocking = FALSE
+        )
+      } else if (transport == "tcp") {
+        # TCP connection
+        socketConnection(
+          host = host,
+          port = port,
+          open = "w+b",
+          blocking = TRUE
+        )
+      } else {
+        # UDP connection
+        socketConnection(
+          host = host,
+          port = port,
+          open = "w+b",
+          blocking = FALSE,
+          server = FALSE
+        )
+      }
+    }, error = function(e) {
+      warning("Failed to open syslog connection (", transport, "): ",
+              conditionMessage(e), call. = FALSE)
+      NULL
+    })
+
+    conn
+  }
+
+  # Format message based on protocol
+  format_syslog_message <- function(event, priority) {
+    if (protocol == "rfc3164") {
+      # RFC 3164: <priority>timestamp hostname app_name[pid]: message
+      timestamp <- format(event$time, "%b %d %H:%M:%S")
+      hostname <- Sys.info()["nodename"]
+      pid <- Sys.getpid()
+
+      paste0("<", priority, ">",
+             timestamp, " ",
+             hostname, " ",
+             app_name, "[", pid, "]: ",
+             event$message)
+
+    } else {
+      # RFC 5424: <priority>version timestamp hostname app_name pid msgid - message
+      timestamp <- format(event$time, "%Y-%m-%dT%H:%M:%S%z")
+      hostname <- Sys.info()["nodename"]
+      pid <- Sys.getpid()
+
+      paste0("<", priority, ">",
+             "1 ",  # version
+             timestamp, " ",
+             hostname, " ",
+             app_name, " ",
+             pid, " ",
+             "- ",  # msgid (none)
+             "- ",  # structured data (none)
+             event$message)
+    }
+  }
+
+  receiver(function(event) {
+    # Level filtering
+    if (event$level_number < lower_num || event$level_number > upper_num) {
+      return(invisible(NULL))
+    }
+
+    # Calculate priority
+    severity <- get_syslog_severity(event$level_number)
+    priority <- (facility_code * 8) + severity
+
+    # Format message
+    msg <- format_syslog_message(event, priority)
+
+    # Send to syslog
+    tryCatch({
+      connection <- get_connection()
+      if (!is.null(connection)) {
+        writeLines(msg, connection)
+        flush(connection)
+      }
+    }, error = function(e) {
+      warning("Syslog write failed: ", conditionMessage(e), call. = FALSE)
+      # Try to reconnect on next event
+      if (!is.null(conn)) {
+        try(close(conn), silent = TRUE)
+        conn <<- NULL
+      }
+    })
+
+    invisible(NULL)
+  })
+}
 
 #' Console receiver with color-coded output
 #'
@@ -900,9 +2113,10 @@ to_shinyalert <- function(lower = WARNING, upper = HIGHEST, ...){
           return(invisible(NULL))
         }
 
-        # TODO: add level lookup table
+        # Map log level to shinyalert type (info, success, warning, error)
+        alert_type <- get_shiny_type(event$level_number, "shinyalert")
         shinyalert::shinyalert(text = event$message,
-                               type = "error",
+                               type = alert_type,
                                ...)
       }
       invisible(NULL)
@@ -944,8 +2158,10 @@ to_notif <- function(lower = NOTE, upper = WARNING, ...){
           return(invisible(NULL))
         }
 
-        # TODO: build event level mapping
+        # Map log level to shiny notification type (default, message, warning, error)
+        notif_type <- get_shiny_type(event$level_number, "notif")
         shiny::showNotification(event$message,
+                                type = notif_type,
                                 ...)
       }
       invisible(NULL)

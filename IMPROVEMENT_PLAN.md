@@ -3,7 +3,50 @@
 ## Overview
 This document outlines improvements to make logthis production-ready for CRAN submission. Focus on completing TODOs, enhancing functionality, and polishing documentation.
 
-**Last Updated:** 2025-10-07
+**Last Updated:** 2025-10-08
+
+---
+
+## Recent Accomplishments (2025-10-08) - v0.1.0 Feature Complete
+
+### ✅ Phase 1 TODOs - Complete
+- Implemented `with_tags.log_event_level()` for custom levels only (built-in levels protected)
+- Fixed Shiny level-to-type mapping with efficient lookup table (`.SHINY_TYPE_MAP`)
+- Added comprehensive tests for both features
+
+### ✅ Phase 4: HTTP & Webhook Infrastructure
+- Implemented `on_webhook()` handler using httr2 (generic HTTP POST handler)
+- Implemented `to_teams()` standalone receiver with Adaptive Cards support
+- Successfully tested Teams integration with Power Automate endpoint
+- Auto-detects content-type from formatter (JSON → application/json, Text → text/plain)
+
+### ✅ Phase 5: Tabular Format Support
+- Implemented `to_csv()` formatter with proper escaping and pipe-delimited tags
+- Implemented `to_parquet()` formatter with buffering support (requires arrow package)
+- Implemented `to_feather()` formatter with buffering support (requires arrow package)
+- Updated `on_local()` to add `flush_threshold` parameter for buffered writes
+- Implemented `requires_buffering` flag detection in handlers
+- Created `.build_buffered_local_receiver()` for data frame accumulation
+
+### ✅ Phase 6: System Integration
+- Implemented `to_syslog()` receiver with full RFC 3164/5424 support
+- Supports UDP, TCP, and UNIX socket transports
+- Comprehensive facility code mapping (kern, user, daemon, local0-7, etc.)
+- Level-to-severity mapping (0-7 syslog scale)
+- Connection pooling with automatic reconnection
+
+### ✅ Phase 7: Async Research (Documentation Only)
+- Researched future, mirai, and nanonext packages
+- Created comprehensive 20-page async-logging-research.md document
+- **Recommendation:** mirai for v0.2.0 (low latency, high throughput, minimal dependencies)
+- Documented performance benchmarks, implementation patterns, and risks
+
+### ✅ Documentation & Testing
+- Added 41 comprehensive tests for all new receivers (total: 171+ tests)
+- Updated README with all new receivers organized by category
+- Updated CLAUDE.md with new patterns (buffered formatters, standalone receivers, webhook handlers)
+- Updated DESCRIPTION with new dependencies (httr2, arrow, jsonlite)
+- Created docs/implementation-decisions.md with architectural rationale
 
 ---
 
@@ -59,16 +102,23 @@ Note: Allows fine-grained control over which events each receiver accepts. Users
 
 ### 1.2 Complete `with_tags()` Functionality
 **File:** `R/logger.R:244-303`
-**Status:** 🟡 Partially complete
+**Status:** ✅ Complete
 **Completed:**
 - [x] Logger-level tags implemented and applied to events (R/logger.R:49-53)
 - [x] Comprehensive test suite added (tests/testthat/test-tags.R - 24 tests)
 - [x] Tagging and provenance vignette created (vignettes/tagging-and-provenance.Rmd)
 - [x] README updated with tag examples
+- [x] Implemented `with_tags.log_event_level()` for custom levels (R/logger.R:244+)
+- [x] Added `.BUILTIN_LEVELS` constant to protect standard levels
+- [x] Validation prevents tagging built-in levels (LOWEST through HIGHEST)
 
-**Tasks:**
-- [ ] Complete `with_tags.log_event_level()` - auto-apply tags to all events of that level
-- [ ] Add tag filtering/search utilities (optional enhancement)
+**Design Decision:** Custom levels only
+- Built-in levels (NOTE, WARNING, ERROR, etc.) cannot be tagged to preserve standard behavior
+- Custom levels (created via `log_event_level()`) can be auto-tagged
+- Clear error message guides users to create custom levels for auto-tagging
+
+**Future Enhancement:**
+- Tag filtering/search utilities (v0.2.0 or later)
 
 ---
 

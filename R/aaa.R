@@ -1,5 +1,10 @@
 NULL
 
+# Null-coalescing operator (returns rhs if lhs is NULL)
+`%||%` <- function(lhs, rhs) {
+  if (is.null(lhs)) rhs else lhs
+}
+
 guard_level_type <- function(level){
   if (is.null(level)) {
     message("Level not specified, will not change value in logger.")
@@ -34,4 +39,61 @@ get_log_color <- function(level_number) {
   # findInterval returns 0 if level_number < min, so we need to handle that
   if (idx == 0) idx <- 1
   .LEVEL_COLOR_MAP$colors[[idx]]
+}
+
+# Package-level constant for built-in event levels
+# Used to protect standard levels from modification (e.g., via with_tags)
+# Custom levels (created via log_event_level()) are not in this list
+.BUILTIN_LEVELS <- c(
+  "LOWEST",    # 0
+  "TRACE",     # 10
+  "DEBUG",     # 20
+  "NOTE",      # 30
+  "MESSAGE",   # 40
+  "WARNING",   # 60
+  "ERROR",     # 80
+  "CRITICAL",  # 90
+  "HIGHEST"    # 100
+)
+
+# Package-level constant for Shiny notification type mapping
+# Maps log event levels to Shiny alert/notification types
+# Used by to_shinyalert() and to_notif() receivers
+.SHINY_TYPE_MAP <- list(
+  # shinyalert types: "info", "success", "warning", "error"
+  # Level ranges map to visual urgency
+  shinyalert = list(
+    levels = c(0, 20, 30, 40, 60, 80),  # Thresholds
+    types = c("info",     # LOWEST-TRACE (0-19): info
+              "info",     # DEBUG (20-29): info
+              "success",  # NOTE (30-39): success
+              "info",     # MESSAGE (40-59): info
+              "warning",  # WARNING (60-79): warning
+              "error")    # ERROR-HIGHEST (80+): error
+  ),
+  # shiny::showNotification types: "default", "message", "warning", "error"
+  # More granular mapping for inline notifications
+  notif = list(
+    levels = c(0, 20, 30, 40, 60, 80),  # Thresholds
+    types = c("default",  # LOWEST-TRACE (0-19): default
+              "default",  # DEBUG (20-29): default
+              "message",  # NOTE (30-39): message
+              "message",  # MESSAGE (40-59): message
+              "warning",  # WARNING (60-79): warning
+              "error")    # ERROR-HIGHEST (80+): error
+  )
+)
+
+# Get Shiny type for a given log level
+# @param level_number Numeric log level (0-100)
+# @param receiver_type Either "shinyalert" or "notif"
+# @return Character string with Shiny type
+get_shiny_type <- function(level_number, receiver_type = c("shinyalert", "notif")) {
+  receiver_type <- match.arg(receiver_type)
+  map <- .SHINY_TYPE_MAP[[receiver_type]]
+
+  idx <- findInterval(level_number, map$levels, rightmost.closed = TRUE)
+  if (idx == 0) idx <- 1
+
+  map$types[[idx]]
 }

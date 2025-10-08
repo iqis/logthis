@@ -474,7 +474,13 @@ with_limits.log_formatter <- function(x,
 #' (apply to all events). Tags from all three levels are combined when an event
 #' is logged.
 #'
-#' @param x An object to tag: log_event, log_event_level, or logger
+#' **IMPORTANT:** Event level tagging (via \code{with_tags.log_event_level()}) is
+#' **only allowed for custom levels**. Built-in levels (LOWEST, TRACE, DEBUG, NOTE,
+#' MESSAGE, WARNING, ERROR, CRITICAL, HIGHEST) cannot be tagged to preserve
+#' standard behavior. Create custom levels with \code{log_event_level()} to use
+#' auto-tagging.
+#'
+#' @param x An object to tag: log_event, log_event_level (custom only), or logger
 #' @param ... Character tags to add
 #' @param append Whether to append tags to existing ones (default TRUE) or replace them
 #'
@@ -485,16 +491,24 @@ with_limits.log_formatter <- function(x,
 #' ```
 #' with_tags.log_event(log_event, ...: character, append: logical = TRUE) -> log_event
 #' with_tags.log_event_level(log_event_level, ...: character, append: logical = TRUE) -> log_event_level
+#'   NOTE: log_event_level must be custom (not built-in)
 #' with_tags.logger(logger, ...: character, append: logical = TRUE) -> logger
 #' ```
 #'
 #' @examples
-#' # Tag individual events
+#' # Tag individual events (works with any event)
 #' event <- NOTE("User login") %>% with_tags("auth", "security")
 #'
-#' # Create auto-tagged level
-#' CRITICAL <- ERROR %>% with_tags("critical", "alert")
-#' event <- CRITICAL("System failure")  # Automatically has tags
+#' # Create custom level with auto-tagging (ALLOWED)
+#' AUDIT <- log_event_level("AUDIT", 70)
+#' AUDIT <- AUDIT %>% with_tags("security", "compliance")
+#' event <- AUDIT("User accessed sensitive data")  # Auto-tagged
+#'
+#' \dontrun{
+#' # Trying to tag built-in level (NOT ALLOWED - will error)
+#' WARNING <- WARNING %>% with_tags("my-tag")
+#' # Error: Cannot add tags to built-in level 'WARNING'
+#' }
 #'
 #' # Tag all logger events
 #' log_this <- logger() %>%
@@ -502,12 +516,12 @@ with_limits.log_formatter <- function(x,
 #'     with_tags("production", "api-service")
 #'
 #' # Tag hierarchy: event + level + logger tags are all combined
-#' TAGGED_LEVEL <- NOTE %>% with_tags("level_tag")
+#' BUSINESS <- log_event_level("BUSINESS", 50) %>% with_tags("level_tag")
 #' log_tagged <- logger() %>%
 #'     with_receivers(to_console()) %>%
 #'     with_tags("logger_tag")
-#' event <- TAGGED_LEVEL("Message") %>% with_tags("event_tag")
-#' log_tagged(event)  # Has all three tags
+#' event <- BUSINESS("Revenue milestone") %>% with_tags("event_tag")
+#' log_tagged(event)  # Has all three tags: event_tag, level_tag, logger_tag
 #'
 with_tags <- function(x, ...){
   UseMethod("with_tags", x)
@@ -544,6 +558,17 @@ with_tags.log_event <- function(x, ..., append = TRUE){
 #' @rdname with_tags
 with_tags.log_event_level <- function(x, ..., append = TRUE){
   log_event_level <- x
+
+  # IMPORTANT: Validate that this is NOT a built-in level
+  level_class <- attr(log_event_level, "level_class")
+  if (level_class %in% .BUILTIN_LEVELS) {
+    stop("Cannot add tags to built-in level '", level_class, "'.\n",
+         "  Built-in levels (LOWEST, TRACE, DEBUG, NOTE, MESSAGE, WARNING, ERROR, CRITICAL, HIGHEST)\n",
+         "  cannot be tagged to preserve standard behavior.\n",
+         "  Solution: Create a custom level with log_event_level() for auto-tagging.\n",
+         "  Example: AUDIT <- log_event_level(\"AUDIT\", 70) %>% with_tags(\"security\")\n",
+         "  See: ?log_event_level for creating custom levels")
+  }
 
   # Validate tags before unlisting to catch type errors
   tag_list <- list(...)

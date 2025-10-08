@@ -185,34 +185,117 @@ test_that("descriptive test name", {
 
 ## Common Tasks
 
-### Adding a New Formatter
+### Adding a Line-Based Formatter (CSV, Text, JSON)
 
 1. **Create formatter function in R/receivers.R:**
 ```r
 #' @export
 #' @family formatters
-to_csv <- function(separator = ",") {
-  formatter(function(event) {
-    # Build CSV row with standard fields
-    fields <- c(as.character(event$time),
-                event$level_class,
-                event$level_number,
-                event$message)
-    paste(fields, collapse = separator)
+to_csv <- function(separator = ",", quote = "\"", headers = TRUE) {
+  # Closure state for headers
+  headers_written <- FALSE
+
+  fmt_func <- formatter(function(event) {
+    # CSV escaping logic
+    escape_csv_field <- function(value, sep, quo) {
+      # ... escaping implementation
+    }
+
+    # Build header row on first call
+    if (!headers_written && headers) {
+      headers_written <<- TRUE
+      header_line <- paste0("time,level,level_number,message,tags\n")
+      # ... header logic
+    }
+
+    # Build data row
+    fields <- c(
+      as.character(event$time),
+      event$level_class,
+      as.character(as.numeric(event$level_number)),  # Convert S3 class to numeric!
+      event$message
+    )
+    paste(sapply(fields, escape_csv_field, sep = separator, quo = quote), collapse = separator)
   })
 
   # Attach config
-  attr(fmt_func, "config") <- list(format_type = "csv",
-                                    separator = separator,
-                                    backend = NULL,
-                                    backend_config = list(),
-                                    lower = NULL,
-                                    upper = NULL)
+  attr(fmt_func, "config") <- list(
+    format_type = "csv",
+    separator = separator,
+    backend = NULL,
+    backend_config = list(),
+    lower = NULL,
+    upper = NULL
+  )
   fmt_func
 }
 ```
 
+**Key points:**
+- Use closure state (`headers_written`) for stateful formatting
+- Always convert `event$level_number` to numeric (it's an S3 class that breaks JSON serialization!)
+- Return string (not data frame) for line-based formats
+
 2. **Usage:** `to_csv() %>% on_local(path = "app.csv")`
+
+---
+
+### Adding a Buffered Formatter (Parquet, Feather)
+
+**Use Case:** Columnar formats that benefit from batching events before writing
+
+1. **Create formatter that returns data frames:**
+```r
+#' @export
+#' @family formatters
+to_parquet <- function(compression = "snappy") {
+  fmt_func <- formatter(function(event) {
+    # Return single-row data frame (not string!)
+    row_data <- data.frame(
+      time = event$time,
+      level = event$level_class,
+      level_number = as.integer(as.numeric(event$level_number)),  # Convert to integer!
+      message = event$message,
+      stringsAsFactors = FALSE
+    )
+
+    # Tags as list column (Arrow supports this!)
+    row_data$tags <- I(list(event$tags))
+
+    # Add custom fields
+    custom_fields <- setdiff(names(event), c("time", "level_class", "level_number", "message", "tags"))
+    for (field in custom_fields) {
+      row_data[[field]] <- I(list(event[[field]]))  # Store as list column
+    }
+
+    row_data
+  })
+
+  # CRITICAL: Set requires_buffering flag
+  attr(fmt_func, "config") <- list(
+    format_type = "parquet",
+    compression = compression,
+    backend = NULL,
+    backend_config = list(),
+    lower = NULL,
+    upper = NULL,
+    requires_buffering = TRUE  # This tells handlers to use buffered receiver!
+  )
+  fmt_func
+}
+```
+
+**Key points:**
+- Return data frame (not string!) for buffered formats
+- Set `requires_buffering = TRUE` in config
+- Use list columns (`I(list(...))`) for complex fields
+- Handlers will automatically detect this flag and use `.build_buffered_local_receiver()`
+
+2. **Handler support:** Already implemented in `on_local()` via `.build_buffered_local_receiver()`
+
+3. **Usage:** `to_parquet() %>% on_local(path = "app.parquet", flush_threshold = 1000)`
+
+---
 
 ### Adding a New Handler
 
@@ -263,6 +346,257 @@ on_gcs <- function(formatter, bucket, object, project, ...) {
 } else if (config$backend == "gcs") {
   .build_gcs_receiver(formatter, config)
 ```
+
+---
+
+### Adding a Webhook Handler (HTTP Integration)
+
+**Use Case:** Send formatted logs to HTTP endpoints (generic pattern for any webhook)
+
+**Example:** `on_webhook()` for sending JSON/text to any HTTP endpoint
+
+```r
+#' @export
+#' @family handlers
+on_webhook <- function(formatter, url, method = "POST",
+                       headers = NULL, content_type = NULL,
+                       timeout_seconds = 30, max_tries = 3, ...) {
+  if (!inherits(formatter, "log_formatter")) {
+    stop("`formatter` must be a log_formatter")
+  }
+
+  # Auto-detect content type from formatter if not specified
+  if (is.null(content_type)) {
+    format_type <- attr(formatter, "config")$format_type
+    content_type <- switch(format_type,
+                           "text" = "text/plain",
+                           "json" = "application/json",
+                           "text/plain")  # Default fallback
+  }
+
+  config <- attr(formatter, "config")
+  config$backend <- "webhook"
+  config$backend_config <- list(
+    url = url,
+    method = method,
+    headers = headers,
+    content_type = content_type,
+    timeout_seconds = timeout_seconds,
+    max_tries = max_tries,
+    extra_args = list(...)
+  )
+
+  attr(formatter, "config") <- config
+  formatter
+}
+```
+
+**Builder implementation:**
+```r
+.build_webhook_receiver <- function(formatter, config) {
+  bc <- config$backend_config
+
+  if (!requireNamespace("httr2", quietly = TRUE)) {
+    stop("Package 'httr2' required for webhook receivers")
+  }
+
+  receiver(function(event) {
+    # Level filtering
+    if (!is.null(config$lower) &&
+        event$level_number < attr(config$lower, "level_number")) {
+      return(invisible(NULL))
+    }
+
+    # Format event
+    content <- formatter(event)
+
+    # Send HTTP request
+    tryCatch({
+      req <- httr2::request(bc$url)
+      req <- httr2::req_method(req, bc$method)
+      req <- httr2::req_body_raw(req, charToRaw(content))
+      req <- httr2::req_headers(req, `Content-Type` = bc$content_type)
+      req <- httr2::req_timeout(req, bc$timeout_seconds)
+
+      if (bc$max_tries > 1) {
+        req <- httr2::req_retry(req, max_tries = bc$max_tries)
+      }
+
+      resp <- httr2::req_perform(req)
+    }, error = function(e) {
+      warning("Webhook request failed: ", conditionMessage(e), call. = FALSE)
+    })
+
+    invisible(NULL)
+  })
+}
+```
+
+**Usage:**
+```r
+# Send JSON logs to webhook
+to_json() %>% on_webhook(url = "https://webhook.site/xyz")
+
+# Send text logs with custom headers
+to_text() %>% on_webhook(
+  url = "https://api.example.com/logs",
+  headers = list(Authorization = "Bearer TOKEN")
+)
+```
+
+---
+
+### Adding a Standalone Receiver (Protocol-Specific)
+
+**Use Case:** Receivers that implement specific protocols (Teams, Slack, Syslog) don't use formatter/handler composition
+
+**Example 1: Microsoft Teams with Adaptive Cards**
+
+```r
+#' @export
+#' @family receivers
+to_teams <- function(webhook_url, title = "Application Log",
+                     lower = WARNING, upper = HIGHEST,
+                     timeout_seconds = 30, max_tries = 3, ...) {
+  # Validate inputs
+  if (!is.character(webhook_url) || length(webhook_url) != 1) {
+    stop("`webhook_url` must be a non-empty character string")
+  }
+
+  # Extract level numbers for filtering
+  lower_num <- attr(lower, "level_number")
+  upper_num <- attr(upper, "level_number")
+
+  receiver(function(event) {
+    # Level filtering
+    if (event$level_number < lower_num || event$level_number > upper_num) {
+      return(invisible(NULL))
+    }
+
+    # Build Adaptive Card JSON (protocol-specific!)
+    # Power Automate expects this exact structure
+    facts_list <- list()
+    facts_list[[length(facts_list) + 1]] <- list(
+      title = "Level",
+      value = paste0(event$level_class, " (", as.numeric(event$level_number), ")")
+    )
+    # ... build complete Adaptive Card structure
+
+    payload <- list(
+      type = "message",
+      attachments = list(
+        list(
+          contentType = "application/vnd.microsoft.card.adaptive",
+          content = list(
+            `$schema` = "http://adaptivecards.io/schemas/adaptive-card.json",
+            type = "AdaptiveCard",
+            version = "1.2",
+            body = list(/* ... card elements ... */)
+          )
+        )
+      )
+    )
+
+    # Send to Teams
+    json_body <- jsonlite::toJSON(payload, auto_unbox = TRUE)
+    # ... httr2 request logic
+
+    invisible(NULL)
+  })
+}
+```
+
+**Key differences from formatter+handler pattern:**
+- **No formatter composition**: Builds payload directly in receiver
+- **Protocol-specific**: Adaptive Card format is specific to Teams
+- **Standalone**: Can't be split into to_adaptive_card() %>% on_teams()
+- **Complete receiver**: Returns `log_receiver`, not `log_formatter`
+
+**Example 2: Syslog with RFC Support**
+
+```r
+#' @export
+#' @family receivers
+to_syslog <- function(host = "localhost", port = 514,
+                      protocol = c("rfc3164", "rfc5424"),
+                      transport = c("udp", "tcp", "unix"),
+                      facility = "user", app_name = "R",
+                      lower = LOWEST, upper = HIGHEST) {
+  protocol <- match.arg(protocol)
+  transport <- match.arg(transport)
+
+  # Validate facility
+  facility_map <- c("user" = 1, "local0" = 16, ..., "local7" = 23)
+  if (!facility %in% names(facility_map)) {
+    stop("Invalid facility: ", facility)
+  }
+  facility_code <- facility_map[[facility]]
+
+  # Level to severity mapping (0-7 syslog scale)
+  get_syslog_severity <- function(level_number) {
+    if (level_number >= 100) 0      # emergency
+    else if (level_number >= 90) 2  # critical
+    else if (level_number >= 80) 3  # error
+    # ... complete mapping
+  }
+
+  # Connection pooling with closure
+  conn <- NULL
+  get_connection <- function() {
+    if (is.null(conn) || !isOpen(conn)) {
+      conn <<- socketConnection(host, port, blocking = FALSE)
+    }
+    conn
+  }
+
+  receiver(function(event) {
+    # Level filtering
+    if (event$level_number < attr(lower, "level_number") ||
+        event$level_number > attr(upper, "level_number")) {
+      return(invisible(NULL))
+    }
+
+    # Calculate priority
+    severity <- get_syslog_severity(event$level_number)
+    priority <- (facility_code * 8) + severity
+
+    # Format message (protocol-specific!)
+    if (protocol == "rfc5424") {
+      # RFC 5424: <PRI>VERSION TIMESTAMP HOSTNAME APP-NAME PROCID MSGID SD MSG
+      msg <- sprintf("<%d>1 %s %s %s - - - %s",
+                     priority, format(event$time, "%Y-%m-%dT%H:%M:%S%z"),
+                     Sys.info()["nodename"], app_name, event$message)
+    } else {
+      # RFC 3164: <PRI>TIMESTAMP HOSTNAME TAG: MSG
+      msg <- sprintf("<%d>%s %s %s: %s",
+                     priority, format(event$time, "%b %d %H:%M:%S"),
+                     Sys.info()["nodename"], app_name, event$message)
+    }
+
+    # Send via appropriate transport
+    tryCatch({
+      conn <- get_connection()
+      writeLines(msg, conn)
+    }, error = function(e) {
+      conn <<- NULL  # Reset connection on error
+      warning("Syslog send failed: ", conditionMessage(e), call. = FALSE)
+    })
+
+    invisible(NULL)
+  })
+}
+```
+
+**When to use standalone receivers:**
+- Protocol has specific message format (Adaptive Cards, Syslog RFC)
+- Formatting and transport are tightly coupled
+- No value in splitting into formatter + handler
+
+**When to use formatter + handler:**
+- Format is reusable (JSON, CSV, Text can go to files, S3, webhooks)
+- Transport is generic (HTTP POST, file write, cloud upload)
+
+---
 
 ### Adding a New Receiver
 
@@ -341,6 +675,176 @@ Tags from all three sources are combined (order matters):
 - Outputs JSONL format (one JSON object per line)
 - Compact by default, use `pretty = TRUE` for debugging
 - Always append mode (no rotation yet)
+
+### 8. **CRITICAL: level_number Serialization** ⚠️
+**Problem:** `event$level_number` is an S3 class, not a plain numeric!
+
+**Symptom:** `jsonlite::toJSON()` fails with "No method asJSON S3 class: level_number"
+
+**Solution:** Always convert to numeric before serialization:
+```r
+# WRONG - breaks JSON/CSV/any serialization
+payload <- list(level_number = event$level_number)
+
+# CORRECT - convert S3 class to numeric
+payload <- list(level_number = as.numeric(event$level_number))
+```
+
+**Affected areas:**
+- JSON formatters (`to_json()`)
+- CSV formatters (`to_csv()`)
+- HTTP payloads (`to_teams()`, webhook receivers)
+- Any data frame construction (`to_parquet()`, `to_feather()`)
+
+**Why it exists:** `level_number` has class `c("log_event_level_number", "numeric")` to enable S3 method dispatch for printing/comparison.
+
+---
+
+### 9. Buffered Receiver Pattern
+**Flag:** `requires_buffering = TRUE` in formatter config
+
+**Purpose:** Signals handlers to accumulate data frames instead of writing line-by-line
+
+**Implementation:**
+```r
+# Formatter sets flag
+attr(fmt_func, "config")$requires_buffering <- TRUE
+
+# Handler checks flag and dispatches
+if (isTRUE(config$requires_buffering)) {
+  return(.build_buffered_local_receiver(formatter, config))
+} else {
+  return(.build_local_receiver(formatter, config))  # Line-based
+}
+```
+
+**Used by:** `to_parquet()`, `to_feather()` (any columnar format)
+
+**Buffering logic:**
+- Accumulate events in `buffer_df` (data frame)
+- Flush when `nrow(buffer_df) >= flush_threshold`
+- Use `rbind()` or `dplyr::bind_rows()` for row accumulation
+- Flush on finalizer for graceful shutdown
+
+---
+
+### 10. Closure State in Formatters
+**Pattern:** Use closure variables for stateful formatting
+
+**Example:** CSV headers written only once
+```r
+to_csv <- function() {
+  headers_written <- FALSE  # Closure variable
+
+  formatter(function(event) {
+    if (!headers_written) {
+      headers_written <<- TRUE  # Modify closure state
+      # ... write headers
+    }
+    # ... write data row
+  })
+}
+```
+
+**Use cases:**
+- First-run initialization (CSV headers)
+- Cumulative state (event counters)
+- Configuration caching
+
+**Note:** Closure state persists across receiver calls but resets if receiver is recreated
+
+---
+
+### 11. Connection Pooling in Network Receivers
+**Pattern:** Reuse connections across events, reconnect on failure
+
+```r
+to_syslog <- function(host, port) {
+  conn <- NULL  # Closure variable for connection
+
+  get_connection <- function() {
+    if (is.null(conn) || !isOpen(conn)) {
+      conn <<- socketConnection(host, port, blocking = FALSE)
+    }
+    conn
+  }
+
+  receiver(function(event) {
+    tryCatch({
+      c <- get_connection()
+      writeLines(msg, c)
+    }, error = function(e) {
+      conn <<- NULL  # Reset on error, will reconnect next time
+    })
+  })
+}
+```
+
+**Benefits:**
+- Avoid connection overhead per event
+- Automatic reconnection on network failures
+- Minimal latency for high-frequency logging
+
+---
+
+### 12. Power Automate Adaptive Card Structure
+**Critical:** Power Automate expects a very specific JSON structure for Teams
+
+**Wrong approach** (won't render):
+```r
+# MessageCard schema - doesn't work with Power Automate
+payload <- list(
+  `@type` = "MessageCard",
+  `@context` = "https://schema.org/extensions",
+  summary = "Log message"
+)
+```
+
+**Correct approach** (Adaptive Card):
+```r
+# Adaptive Card schema - works with Power Automate
+payload <- list(
+  type = "message",
+  attachments = list(
+    list(
+      contentType = "application/vnd.microsoft.card.adaptive",
+      content = list(
+        `$schema` = "http://adaptivecards.io/schemas/adaptive-card.json",
+        type = "AdaptiveCard",
+        version = "1.2",
+        body = list(
+          list(type = "TextBlock", text = "Log message")
+        )
+      )
+    )
+  )
+)
+```
+
+**Why:** Power Automate's "send webhook to channel" workflow expects Adaptive Cards, not MessageCards
+
+**Design tool:** https://adaptivecards.io/designer/ for testing payloads
+
+---
+
+### 13. Buffered Receiver Data Frame Accumulation
+**Pattern:** Use `I(list(...))` for complex fields in data frames
+
+```r
+# Store tags as list column (not character vector!)
+row_data$tags <- I(list(event$tags))
+
+# Store custom fields as list columns
+row_data$custom_field <- I(list(event$custom_field))
+```
+
+**Why:** Arrow supports list columns, preserves nested structure
+
+**Pitfall:** Without `I()`, R tries to expand vectors into multiple rows
+
+**Usage:** Essential for Parquet/Feather formatters where fields vary per event
+
+---
 
 ## Development Workflow
 

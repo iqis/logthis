@@ -408,3 +408,475 @@ test_that("on_azure() enriches formatter config", {
   expect_equal(config$backend_config$blob, "app.log")
   expect_equal(config$backend_config$flush_threshold, 75L)
 })
+
+# ============================================================================
+# Shiny Level-to-Type Mapping Tests
+# ============================================================================
+
+test_that("get_shiny_type maps levels correctly for shinyalert", {
+  # LOWEST-TRACE (0-19) -> info
+  expect_equal(get_shiny_type(0, "shinyalert"), "info")
+  expect_equal(get_shiny_type(10, "shinyalert"), "info")
+  expect_equal(get_shiny_type(19, "shinyalert"), "info")
+
+  # DEBUG (20-29) -> info
+  expect_equal(get_shiny_type(20, "shinyalert"), "info")
+  expect_equal(get_shiny_type(29, "shinyalert"), "info")
+
+  # NOTE (30-39) -> success
+  expect_equal(get_shiny_type(30, "shinyalert"), "success")
+  expect_equal(get_shiny_type(39, "shinyalert"), "success")
+
+  # MESSAGE (40-59) -> info
+  expect_equal(get_shiny_type(40, "shinyalert"), "info")
+  expect_equal(get_shiny_type(50, "shinyalert"), "info")
+  expect_equal(get_shiny_type(59, "shinyalert"), "info")
+
+  # WARNING (60-79) -> warning
+  expect_equal(get_shiny_type(60, "shinyalert"), "warning")
+  expect_equal(get_shiny_type(70, "shinyalert"), "warning")
+  expect_equal(get_shiny_type(79, "shinyalert"), "warning")
+
+  # ERROR-HIGHEST (80+) -> error
+  expect_equal(get_shiny_type(80, "shinyalert"), "error")
+  expect_equal(get_shiny_type(90, "shinyalert"), "error")
+  expect_equal(get_shiny_type(100, "shinyalert"), "error")
+})
+
+test_that("get_shiny_type maps levels correctly for notif", {
+  # LOWEST-TRACE (0-19) -> default
+  expect_equal(get_shiny_type(0, "notif"), "default")
+  expect_equal(get_shiny_type(10, "notif"), "default")
+  expect_equal(get_shiny_type(19, "notif"), "default")
+
+  # DEBUG (20-29) -> default
+  expect_equal(get_shiny_type(20, "notif"), "default")
+  expect_equal(get_shiny_type(29, "notif"), "default")
+
+  # NOTE (30-39) -> message
+  expect_equal(get_shiny_type(30, "notif"), "message")
+  expect_equal(get_shiny_type(39, "notif"), "message")
+
+  # MESSAGE (40-59) -> message
+  expect_equal(get_shiny_type(40, "notif"), "message")
+  expect_equal(get_shiny_type(50, "notif"), "message")
+  expect_equal(get_shiny_type(59, "notif"), "message")
+
+  # WARNING (60-79) -> warning
+  expect_equal(get_shiny_type(60, "notif"), "warning")
+  expect_equal(get_shiny_type(70, "notif"), "warning")
+  expect_equal(get_shiny_type(79, "notif"), "warning")
+
+  # ERROR-HIGHEST (80+) -> error
+  expect_equal(get_shiny_type(80, "notif"), "error")
+  expect_equal(get_shiny_type(90, "notif"), "error")
+  expect_equal(get_shiny_type(100, "notif"), "error")
+})
+
+# ============================================================================
+# Webhook Handler Tests (on_webhook)
+# ============================================================================
+
+test_that("on_webhook() validates formatter input", {
+  expect_error(
+    on_webhook("not a formatter", url = "http://example.com"),
+    "must be a log_formatter"
+  )
+
+  expect_error(
+    on_webhook(to_identity(), url = "http://example.com"),
+    "must be a log_formatter"
+  )
+})
+
+test_that("on_webhook() validates URL", {
+  fmt <- to_text()
+
+  expect_error(
+    on_webhook(fmt, url = ""),
+    "non-empty character string"
+  )
+
+  expect_error(
+    on_webhook(fmt, url = c("http://a.com", "http://b.com")),
+    "non-empty character string"
+  )
+
+  expect_error(
+    on_webhook(fmt, url = 123),
+    "non-empty character string"
+  )
+})
+
+test_that("on_webhook() enriches formatter config", {
+  fmt <- to_json() %>%
+    on_webhook(
+      url = "https://webhook.site/test",
+      method = "POST",
+      timeout_seconds = 60,
+      max_tries = 5
+    )
+
+  config <- attr(fmt, "config")
+
+  expect_equal(config$backend, "webhook")
+  expect_equal(config$backend_config$url, "https://webhook.site/test")
+  expect_equal(config$backend_config$method, "POST")
+  expect_equal(config$backend_config$timeout_seconds, 60)
+  expect_equal(config$backend_config$max_tries, 5)
+})
+
+test_that("on_webhook() auto-detects content type from formatter", {
+  # JSON formatter
+  json_fmt <- to_json() %>% on_webhook(url = "http://example.com")
+  json_config <- attr(json_fmt, "config")
+  expect_equal(json_config$backend_config$content_type, "application/json")
+
+  # Text formatter
+  text_fmt <- to_text() %>% on_webhook(url = "http://example.com")
+  text_config <- attr(text_fmt, "config")
+  expect_equal(text_config$backend_config$content_type, "text/plain")
+})
+
+test_that("on_webhook() allows custom content type", {
+  fmt <- to_text() %>%
+    on_webhook(url = "http://example.com", content_type = "application/xml")
+
+  config <- attr(fmt, "config")
+  expect_equal(config$backend_config$content_type, "application/xml")
+})
+
+# ============================================================================
+# Teams Receiver Tests (to_teams)
+# ============================================================================
+
+test_that("to_teams() creates valid receiver", {
+  teams <- to_teams(webhook_url = "https://webhook.example.com")
+
+  expect_s3_class(teams, "log_receiver")
+  expect_s3_class(teams, "function")
+})
+
+test_that("to_teams() validates webhook URL", {
+  expect_error(
+    to_teams(webhook_url = ""),
+    "non-empty character string"
+  )
+
+  expect_error(
+    to_teams(webhook_url = c("url1", "url2")),
+    "non-empty character string"
+  )
+
+  expect_error(
+    to_teams(webhook_url = 123),
+    "non-empty character string"
+  )
+})
+
+test_that("to_teams() respects level filtering", {
+  skip_if_not_installed("httr2")
+  skip_if_not_installed("jsonlite")
+
+  # This test just verifies the receiver runs without error
+  # We can't test actual webhook POST without a real endpoint
+  teams <- to_teams(
+    webhook_url = "https://example.com/webhook",
+    lower = WARNING,
+    upper = ERROR
+  )
+
+  # Should silently filter NOTE (below lower)
+  expect_silent(teams(NOTE("Should be filtered")))
+})
+
+# ============================================================================
+# CSV Formatter Tests (to_csv)
+# ============================================================================
+
+test_that("to_csv() creates valid formatter", {
+  fmt <- to_csv()
+
+  expect_s3_class(fmt, "log_formatter")
+  expect_s3_class(fmt, "function")
+
+  config <- attr(fmt, "config")
+  expect_equal(config$format_type, "csv")
+})
+
+test_that("to_csv() formats events correctly", {
+  temp_dir <- tempdir()
+  csv_path <- file.path(temp_dir, "test.csv")
+
+  # Clean up
+  unlink(csv_path)
+
+  # Create CSV receiver
+  csv_recv <- to_csv() %>% on_local(path = csv_path)
+  log_test <- logger() %>% with_receivers(csv_recv)
+
+  log_test(NOTE("First message", user = "alice", status = "ok"))
+  log_test(WARNING("Second message", user = "bob", code = 404))
+
+  # Read CSV
+  lines <- readLines(csv_path)
+
+  # Should have header + 2 data rows
+  expect_equal(length(lines), 3)
+
+  # Check header
+  expect_true(grepl("time,level,level_number,message,tags", lines[1]))
+
+  # Check data rows contain expected values
+  expect_true(grepl("NOTE", lines[2]))
+  expect_true(grepl("First message", lines[2]))
+  expect_true(grepl("WARNING", lines[3]))
+  expect_true(grepl("Second message", lines[3]))
+
+  # Clean up
+  unlink(csv_path)
+})
+
+test_that("to_csv() handles tags correctly", {
+  temp_dir <- tempdir()
+  csv_path <- file.path(temp_dir, "test_tags.csv")
+  unlink(csv_path)
+
+  csv_recv <- to_csv() %>% on_local(path = csv_path)
+  log_test <- logger() %>%
+    with_receivers(csv_recv) %>%
+    with_tags("logger-tag")
+
+  log_test(NOTE("Test") %>% with_tags("event-tag"))
+
+  lines <- readLines(csv_path)
+
+  # Tags should be pipe-delimited
+  expect_true(grepl("event-tag\\|logger-tag", lines[2]))
+
+  unlink(csv_path)
+})
+
+test_that("to_csv() escapes special characters", {
+  temp_dir <- tempdir()
+  csv_path <- file.path(temp_dir, "test_escape.csv")
+  unlink(csv_path)
+
+  csv_recv <- to_csv() %>% on_local(path = csv_path)
+  log_test <- logger() %>% with_receivers(csv_recv)
+
+  # Message with comma and quotes
+  log_test(NOTE('Message with "quotes" and, commas'))
+
+  lines <- readLines(csv_path)
+
+  # Should be properly escaped
+  expect_true(grepl('"Message with ""quotes"" and, commas"', lines[2]))
+
+  unlink(csv_path)
+})
+
+test_that("to_csv() supports custom separator", {
+  temp_dir <- tempdir()
+  csv_path <- file.path(temp_dir, "test_tsv.tsv")
+  unlink(csv_path)
+
+  # Tab-separated
+  tsv_recv <- to_csv(separator = "\t") %>% on_local(path = csv_path)
+  log_test <- logger() %>% with_receivers(tsv_recv)
+
+  log_test(NOTE("Test message"))
+
+  content <- paste(readLines(csv_path), collapse = "\n")
+  expect_true(grepl("\t", content))
+
+  unlink(csv_path)
+})
+
+# ============================================================================
+# Parquet Formatter Tests (to_parquet)
+# ============================================================================
+
+test_that("to_parquet() creates valid formatter", {
+  fmt <- to_parquet()
+
+  expect_s3_class(fmt, "log_formatter")
+  expect_s3_class(fmt, "function")
+
+  config <- attr(fmt, "config")
+  expect_equal(config$format_type, "parquet")
+  expect_true(config$requires_buffering)
+})
+
+test_that("to_parquet() formats events as data frames", {
+  skip_if_not_installed("arrow")
+
+  fmt <- to_parquet()
+  event <- NOTE("Test message", user = "alice")
+
+  result <- fmt(event)
+
+  expect_s3_class(result, "data.frame")
+  expect_equal(nrow(result), 1)
+  expect_equal(result$message, "Test message")
+  expect_equal(result$level, "NOTE")
+  expect_equal(result$level_number, 30)
+})
+
+test_that("to_parquet() handles tags as list column", {
+  skip_if_not_installed("arrow")
+
+  fmt <- to_parquet()
+  event <- NOTE("Test") %>% with_tags("tag1", "tag2")
+
+  result <- fmt(event)
+
+  expect_true("tags" %in% names(result))
+  expect_type(result$tags, "list")
+  expect_equal(result$tags[[1]], c("tag1", "tag2"))
+})
+
+test_that("to_parquet() writes to file via on_local", {
+  skip_if_not_installed("arrow")
+
+  temp_dir <- tempdir()
+  parquet_path <- file.path(temp_dir, "test.parquet")
+  unlink(parquet_path)
+
+  parquet_recv <- to_parquet() %>%
+    on_local(path = parquet_path, flush_threshold = 2)
+  log_test <- logger() %>% with_receivers(parquet_recv)
+
+  log_test(NOTE("First"))
+  log_test(WARNING("Second"))
+  log_test(ERROR("Third"))  # Should trigger flush
+
+  # Give buffering time to flush
+  Sys.sleep(0.5)
+
+  # File should exist
+  expect_true(file.exists(parquet_path))
+
+  # Read and verify
+  df <- arrow::read_parquet(parquet_path)
+  expect_true(nrow(df) >= 2)  # At least 2 flushed
+
+  unlink(parquet_path)
+})
+
+# ============================================================================
+# Feather Formatter Tests (to_feather)
+# ============================================================================
+
+test_that("to_feather() creates valid formatter", {
+  fmt <- to_feather()
+
+  expect_s3_class(fmt, "log_formatter")
+  expect_s3_class(fmt, "function")
+
+  config <- attr(fmt, "config")
+  expect_equal(config$format_type, "feather")
+  expect_true(config$requires_buffering)
+})
+
+test_that("to_feather() formats events as data frames", {
+  skip_if_not_installed("arrow")
+
+  fmt <- to_feather()
+  event <- WARNING("Test warning", code = 500)
+
+  result <- fmt(event)
+
+  expect_s3_class(result, "data.frame")
+  expect_equal(nrow(result), 1)
+  expect_equal(result$message, "Test warning")
+  expect_equal(result$level, "WARNING")
+})
+
+test_that("to_feather() writes to file via on_local", {
+  skip_if_not_installed("arrow")
+
+  temp_dir <- tempdir()
+  feather_path <- file.path(temp_dir, "test.feather")
+  unlink(feather_path)
+
+  feather_recv <- to_feather() %>%
+    on_local(path = feather_path, flush_threshold = 2)
+  log_test <- logger() %>% with_receivers(feather_recv)
+
+  log_test(NOTE("First"))
+  log_test(WARNING("Second"))
+
+  # Give buffering time to flush
+  Sys.sleep(0.5)
+
+  # File should exist
+  expect_true(file.exists(feather_path))
+
+  # Read and verify
+  df <- arrow::read_feather(feather_path)
+  expect_true(nrow(df) >= 2)
+
+  unlink(feather_path)
+})
+
+# ============================================================================
+# Syslog Receiver Tests (to_syslog)
+# ============================================================================
+
+test_that("to_syslog() creates valid receiver", {
+  # Using unix socket (most likely to work without network)
+  syslog <- to_syslog(transport = "unix", socket_path = "/dev/log")
+
+  expect_s3_class(syslog, "log_receiver")
+  expect_s3_class(syslog, "function")
+})
+
+test_that("to_syslog() validates transport", {
+  expect_error(
+    to_syslog(transport = "invalid"),
+    "'arg' should be one of"
+  )
+})
+
+test_that("to_syslog() validates protocol", {
+  expect_error(
+    to_syslog(protocol = "invalid"),
+    "'arg' should be one of"
+  )
+})
+
+test_that("to_syslog() validates facility", {
+  expect_error(
+    to_syslog(facility = "invalid_facility"),
+    "Invalid facility"
+  )
+})
+
+test_that("to_syslog() respects level filtering", {
+  syslog <- to_syslog(
+    transport = "unix",
+    lower = WARNING,
+    upper = CRITICAL
+  )
+
+  # Should not error even if socket doesn't exist (tryCatch handles it)
+  expect_silent(syslog(DEBUG("Should be filtered")))
+  expect_silent(syslog(WARNING("Should attempt send")))
+})
+
+test_that("to_syslog() level-to-severity mapping is correct", {
+  # We can't easily test the actual severity values without a mock,
+  # but we can verify the receiver accepts all log levels
+  syslog <- to_syslog(transport = "unix", lower = LOWEST, upper = HIGHEST)
+
+  expect_silent(syslog(LOWEST("test")))
+  expect_silent(syslog(TRACE("test")))
+  expect_silent(syslog(DEBUG("test")))
+  expect_silent(syslog(NOTE("test")))
+  expect_silent(syslog(MESSAGE("test")))
+  expect_silent(syslog(WARNING("test")))
+  expect_silent(syslog(ERROR("test")))
+  expect_silent(syslog(CRITICAL("test")))
+  expect_silent(syslog(HIGHEST("test")))
+})

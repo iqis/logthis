@@ -27,9 +27,10 @@ Suggests:
     shinyalert,
     shiny,
     jsonlite,
+    httr2,
+    arrow,
     aws.s3,
-    AzureStor,
-    httr
+    AzureStor
 Imports:
     magrittr,
     glue

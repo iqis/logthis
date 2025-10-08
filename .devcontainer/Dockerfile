@@ -9,8 +9,10 @@ RUN apt-get update && apt-get install -y \
     sudo \
     && rm -rf /var/lib/apt/lists/*
 
-# Create vscode user with sudo privileges
-RUN useradd -m -s /bin/bash -u 1000 vscode \
+# Modify existing user (rstudio) to be named vscode and give sudo privileges
+RUN usermod -l vscode rstudio \
+    && usermod -d /home/vscode -m vscode \
+    && groupmod -n vscode rstudio \
     && echo "vscode ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/vscode \
     && chmod 0440 /etc/sudoers.d/vscode
 

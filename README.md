@@ -103,25 +103,86 @@ Receivers determine where log events are sent. Multiple receivers can be attache
 
 ### Built-in Receivers
 
-```r
-# Console output with color coding (filtering is optional)
-to_console(lower = LOWEST, upper = HIGHEST)
+#### Console & Display
 
-# File output - writes logs to text files
+```r
+# Console output with color coding
+to_console(lower = LOWEST, upper = HIGHEST)
+```
+
+#### File Receivers
+
+```r
+# Text file output
 to_text() %>% on_local(path = "app.log")
 
-# JSON file output - structured logging for log aggregation systems
+# JSON Lines format (for log aggregation)
 to_json() %>% on_local(path = "app.jsonl")
 
-# Shiny alerts (for Shiny applications)
+# CSV format (for spreadsheet analysis)
+to_csv() %>% on_local(path = "app.csv")
+
+# Apache Parquet (columnar format, requires arrow package)
+to_parquet() %>% on_local(path = "app.parquet", flush_threshold = 1000)
+
+# Apache Feather (fast read/write, requires arrow package)
+to_feather() %>% on_local(path = "app.feather", flush_threshold = 1000)
+```
+
+#### Cloud Storage
+
+```r
+# AWS S3
+to_json() %>% on_s3(bucket = "logs", key_prefix = "app/events")
+to_text() %>% on_s3(bucket = "logs", key_prefix = "app/text")
+
+# Azure Blob Storage
+to_json() %>% on_azure(container = "logs", blob = "app.jsonl", endpoint = endpoint)
+```
+
+#### Webhooks & Integrations
+
+```r
+# Generic webhook (POST JSON/text to any HTTP endpoint)
+to_json() %>% on_webhook(url = "https://webhook.site/xyz", method = "POST")
+
+# Microsoft Teams (Adaptive Cards via Power Automate)
+to_teams(
+  webhook_url = "https://your-powerautomate-url",
+  title = "Application Logs",
+  lower = WARNING,
+  upper = HIGHEST
+)
+
+# Syslog (RFC 3164/5424 support)
+to_syslog(
+  host = "localhost",
+  port = 514,
+  protocol = "rfc5424",  # or "rfc3164"
+  transport = "udp",     # or "tcp", "unix"
+  facility = "user",
+  app_name = "myapp"
+)
+```
+
+#### Shiny Integration
+
+```r
+# Shiny alerts (requires shinyalert package)
 to_shinyalert(lower = WARNING, upper = HIGHEST)
 
-# Shiny notifications
+# Shiny notifications (requires shiny package)
 to_notif(lower = NOTE, upper = WARNING)
+```
 
-# Testing receivers
-to_identity()  # Returns the event as-is
-to_void()      # Discards the event
+#### Testing & Development
+
+```r
+# Identity receiver (returns event for inspection)
+to_identity()
+
+# Void receiver (discards all events)
+to_void()
 ```
 
 **Note:** Setting `lower`/`upper` boundaries is strictly optional for receivers. When omitted, receivers process all events that pass through the logger-level filter. Level limits are **inclusive** - events with `level_number >= lower AND <= upper` will be processed.

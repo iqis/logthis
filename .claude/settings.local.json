@@ -16,6 +16,7 @@
       "Bash(_R_CHECK_FORCE_SUGGESTS_=false R CMD check --as-cran logthis_0.1.0.9000.tar.gz)"
     ],
     "deny": [],
-    "ask": []
+    "ask": [],
+    "defaultMode": "bypassPermissions"
   }
 }

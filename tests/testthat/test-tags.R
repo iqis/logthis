@@ -22,32 +22,85 @@ test_that("with_tags.log_event can replace tags", {
   expect_equal(event$tags, "tag2")
 })
 
-test_that("with_tags.log_event_level creates auto-tagged events", {
-  # Create a tagged level
-  TAGGED_ERROR <- ERROR %>% with_tags("critical", "alert")
+test_that("with_tags.log_event_level creates auto-tagged events (custom levels only)", {
+  # Create a custom level
+  AUDIT <- log_event_level("AUDIT", 70)
+
+  # Tag the custom level
+  TAGGED_AUDIT <- AUDIT %>% with_tags("security", "compliance")
 
   # Events from this level should automatically have tags
-  event <- TAGGED_ERROR("System failure")
+  event <- TAGGED_AUDIT("User accessed sensitive data")
 
-  expect_equal(event$tags, c("critical", "alert"))
-  expect_equal(event$message, "System failure")
-  expect_equal(event$level_class, "ERROR")
+  expect_equal(event$tags, c("security", "compliance"))
+  expect_equal(event$message, "User accessed sensitive data")
+  expect_equal(event$level_class, "AUDIT")
 })
 
-test_that("with_tags.log_event_level appends tags", {
-  TAGGED1 <- ERROR %>% with_tags("tag1")
+test_that("with_tags.log_event_level appends tags (custom levels)", {
+  CUSTOM <- log_event_level("CUSTOM", 50)
+  TAGGED1 <- CUSTOM %>% with_tags("tag1")
   TAGGED2 <- TAGGED1 %>% with_tags("tag2")
 
   event <- TAGGED2("Test")
   expect_equal(event$tags, c("tag1", "tag2"))
 })
 
-test_that("with_tags.log_event_level can replace tags", {
-  TAGGED1 <- ERROR %>% with_tags("tag1")
+test_that("with_tags.log_event_level can replace tags (custom levels)", {
+  CUSTOM <- log_event_level("CUSTOM", 50)
+  TAGGED1 <- CUSTOM %>% with_tags("tag1")
   TAGGED2 <- TAGGED1 %>% with_tags("tag2", append = FALSE)
 
   event <- TAGGED2("Test")
   expect_equal(event$tags, "tag2")
+})
+
+test_that("with_tags.log_event_level rejects built-in levels", {
+  # All built-in levels should be rejected
+  expect_error(
+    LOWEST %>% with_tags("tag"),
+    "Cannot add tags to built-in level 'LOWEST'"
+  )
+
+  expect_error(
+    TRACE %>% with_tags("tag"),
+    "Cannot add tags to built-in level 'TRACE'"
+  )
+
+  expect_error(
+    DEBUG %>% with_tags("tag"),
+    "Cannot add tags to built-in level 'DEBUG'"
+  )
+
+  expect_error(
+    NOTE %>% with_tags("tag"),
+    "Cannot add tags to built-in level 'NOTE'"
+  )
+
+  expect_error(
+    MESSAGE %>% with_tags("tag"),
+    "Cannot add tags to built-in level 'MESSAGE'"
+  )
+
+  expect_error(
+    WARNING %>% with_tags("tag"),
+    "Cannot add tags to built-in level 'WARNING'"
+  )
+
+  expect_error(
+    ERROR %>% with_tags("tag"),
+    "Cannot add tags to built-in level 'ERROR'"
+  )
+
+  expect_error(
+    CRITICAL %>% with_tags("tag"),
+    "Cannot add tags to built-in level 'CRITICAL'"
+  )
+
+  expect_error(
+    HIGHEST %>% with_tags("tag"),
+    "Cannot add tags to built-in level 'HIGHEST'"
+  )
 })
 
 test_that("with_tags.logger applies tags to all events", {
@@ -97,8 +150,9 @@ test_that("with_tags.logger can replace tags", {
 })
 
 test_that("tag hierarchy works: event + level + logger", {
-  # Create tagged level
-  TAGGED_LEVEL <- NOTE %>% with_tags("level_tag")
+  # Create custom level with tags
+  BUSINESS <- log_event_level("BUSINESS", 50)
+  TAGGED_LEVEL <- BUSINESS %>% with_tags("level_tag")
 
   # Create logger with tags
   log_capture <- logger() %>%
@@ -119,8 +173,10 @@ test_that("tag hierarchy works: event + level + logger", {
 })
 
 test_that("with_tags validates tag types", {
+  # Test with custom level (built-in levels can't be tagged)
+  CUSTOM <- log_event_level("CUSTOM", 50)
   expect_error(
-    ERROR %>% with_tags("valid", 123),
+    CUSTOM %>% with_tags("valid", 123),
     "Tags must be character strings"
   )
 
