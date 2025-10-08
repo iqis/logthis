@@ -652,11 +652,30 @@ process_transaction <- function(user_id, amount, account) {
 
 ## Pharmaceutical and Clinical Audit Trails
 
-The pharmaceutical and clinical research industries have the most stringent audit trail requirements of any sector, driven by patient safety and regulatory compliance. This section explores how logthis addresses these specialized needs.
+The pharmaceutical and clinical research industries have the most stringent audit trail requirements of any sector, driven by patient safety and regulatory compliance. **This section focuses on where R realistically fits in the pharma technology stack** - primarily in statistical analysis, data pipelines, and review dashboards, not primary data capture systems.
+
+### Where R (and logthis) Actually Fits
+
+**R's role in pharmaceutical workflows:**
+
+```
+Primary Systems          R Analysis Layer           Regulatory Outputs
+----------------         ----------------           ------------------
+CTMS/EDC databases  -->  R analysis scripts   -->  FDA eCTD submission
+Safety databases    -->  Signal detection     -->  Safety reports
+LIMS                -->  Biomarker analysis   -->  Publications
+Registries          -->  Shiny dashboards     -->  Regulatory review
+```
+
+**logthis is designed for the middle layer** - auditing analysis provenance, data pipeline steps, and reviewer actions in R-based tools. It does NOT replace:
+- Database audit logs (PostgreSQL, Oracle audit trails)
+- Clinical Trial Management Systems (Medidata, Veeva)
+- Manufacturing Execution Systems (Siemens, Rockwell)
+- Electronic Health Records (Epic, Cerner)
 
 ### Regulatory Framework
 
-Pharmaceutical audit trails must comply with multiple overlapping regulations:
+When R-based systems are used in regulated workflows, they must comply with:
 
 | Regulation | Scope | Key Requirements |
 |------------|-------|------------------|
@@ -696,222 +715,230 @@ logthis naturally aligns with ALCOA+ data integrity principles:
 | **Enduring** | Durable storage | Cloud redundancy (S3/Azure), local archival |
 | **Available** | Retrievable when needed | Queryable JSON/Parquet formats, cloud accessibility |
 
-### Pharmaceutical Use Cases
+### Realistic Pharmaceutical Use Cases
 
-#### 1. Clinical Trial Data Access Logging
+#### 1. Statistical Analysis Provenance for Regulatory Submissions
 
-Track every access to patient data for regulatory audits:
+**THE primary use case:** Document who ran what analysis, when, with what parameters for FDA/EMA submissions.
 
-```{r clinical-trial-audit, eval=FALSE}
-# Create clinical trial audit logger
-clinical_audit <- logger() %>%
+```{r analysis-provenance, eval=FALSE}
+# Analysis audit logger for regulatory submission
+analysis_audit <- logger() %>%
   with_receivers(
-    # Local append-only JSONL (ALCOA+ Original)
+    # Local JSONL for submission package
     to_json() %>% on_local(
-      path = "/secure/clinical_audit.jsonl",
+      path = "outputs/analysis_audit.jsonl",
       mode = "append"
     ),
-    # Cloud backup for regulatory inspection (ALCOA+ Enduring/Available)
-    to_json() %>% on_s3(
-      bucket = "clinical-trial-audit",
-      key_prefix = "trial_NCT12345678/data_access"
-    )
-  ) %>%
-  with_tags("trial:NCT12345678", "study_phase:3") %>%
-  with_limits(lower = NOTE)  # All events logged
-
-# Function to access patient data with audit
-access_patient_data <- function(patient_id, user_id, purpose) {
-  # Bind user context (ALCOA+ Attributable)
-  session_audit <- clinical_audit %>%
-    with_tags(
-      paste0("user:", user_id),
-      paste0("patient:", patient_id),
-      paste0("session:", session$id),
-      paste0("ip:", session$remote_addr)
-    )
-
-  # Log the access (ALCOA+ Contemporaneous)
-  session_audit(NOTE(
-    "patient_data_accessed",
-    patient_id = patient_id,
-    user_id = user_id,
-    user_role = session$user_role,
-    purpose = purpose,
-    data_fields = c("demographics", "vitals", "adverse_events"),
-    timestamp_utc = format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z"),
-    audit_id = generate_uuid()
-  ))
-
-  # Perform actual data retrieval
-  data <- db_query("SELECT * FROM patient_data WHERE id = ?", patient_id)
-
-  # Log successful retrieval
-  session_audit(NOTE(
-    "patient_data_retrieved",
-    patient_id = patient_id,
-    records_returned = nrow(data),
-    query_duration_ms = elapsed_time
-  ))
-
-  return(data)
-}
-```
-
-**Regulatory compliance achieved:**
-- ✅ Attributable: user_id, user_role, IP address in tags
-- ✅ Contemporaneous: Automatic timestamp on event creation
-- ✅ Original: Append-only JSONL, no overwriting
-- ✅ Enduring: Redundant local + cloud storage
-- ✅ Available: JSON format queryable by regulators
-
-#### 2. Manufacturing Batch Record Audit Trail
-
-Track critical process parameters for GMP compliance:
-
-```{r manufacturing-audit, eval=FALSE}
-# GMP manufacturing audit logger
-batch_audit <- logger() %>%
-  with_receivers(
-    # Validated system (21 CFR Part 11)
-    to_json() %>% on_local(
-      path = "/validated/batch_records/{batch_id}/audit.jsonl",
-      mode = "append"
-    ),
-    # Long-term archival (ALCOA+ Enduring)
-    to_parquet() %>% on_s3(
-      bucket = "gmp-batch-records",
-      key = "year={year}/batch_{batch_id}/audit.parquet",
-      flush_threshold = 100
-    )
-  ) %>%
-  with_tags("facility:site_001", "process:tablet_compression")
-
-# Log critical process parameter changes
-log_process_parameter <- function(batch_id, parameter, old_value, new_value,
-                                   operator_id, reason, electronic_signature) {
-  batch_audit %>%
-    with_tags(paste0("batch:", batch_id)) %>%
-    with_tags(paste0("operator:", operator_id)) %>%
-    {
-      # Log the change with full context
-      .(WARNING(
-        "process_parameter_changed",
-        batch_id = batch_id,
-        parameter_name = parameter,
-        previous_value = old_value,
-        new_value = new_value,
-        operator_id = operator_id,
-        operator_name = get_operator_name(operator_id),
-        change_reason = reason,  # ALCOA+ Consistent (why changed)
-        electronic_signature = electronic_signature,  # 21 CFR Part 11
-        signature_timestamp = Sys.time(),
-        change_approved_by = get_supervisor_id(),
-        validation_status = "in_process",
-        timestamp_utc = format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z")
-      ))
-    }
-}
-
-# Example: Log temperature excursion during manufacturing
-log_process_parameter(
-  batch_id = "BATCH20250108001",
-  parameter = "compression_temperature_celsius",
-  old_value = 25.0,
-  new_value = 27.5,
-  operator_id = "OP12345",
-  reason = "Room HVAC fluctuation, within acceptable range per SOP-MFG-042",
-  electronic_signature = sign_with_certificate(operator_id, "BATCH20250108001")
-)
-```
-
-**GMP compliance achieved:**
-- ✅ All process parameter changes logged with operator attribution
-- ✅ Electronic signatures captured (21 CFR Part 11 Subpart B)
-- ✅ Change reason documented (audit trail requirement)
-- ✅ Tamper-proof append-only logs
-- ✅ Long-term retention via Parquet archival
-
-#### 3. Pharmacovigilance Adverse Event Reporting
-
-Log all adverse events with patient safety context:
-
-```{r pharmacovigilance-audit, eval=FALSE}
-# Adverse event audit logger
-ae_audit <- logger() %>%
-  with_receivers(
-    # Primary AE database log
-    to_json() %>% on_local(
-      path = "/safety/adverse_events/ae_audit.jsonl",
-      mode = "append"
-    ),
-    # Regulatory submission copy
+    # Cloud backup for sponsor archive
     to_json() %>% on_s3(
       bucket = "regulatory-submissions",
-      key_prefix = "pharmacovigilance/adverse_events"
-    ),
-    # Real-time safety alerts for serious AEs
-    to_console(lower = ERROR)  # Serious AEs trigger console alerts
+      key_prefix = "NCT12345678/analysis_logs"
+    )
   ) %>%
-  with_tags("drug:XYZ123", "indication:oncology") %>%
+  with_tags("trial:NCT12345678", "submission:NDA_2024") %>%
   with_limits(lower = NOTE)
 
-# Log adverse event with full traceability
-report_adverse_event <- function(ae_id, patient_id, reporter_id, severity,
-                                  description, causality_assessment) {
-  ae_logger <- ae_audit %>%
-    with_tags(
-      paste0("ae_id:", ae_id),
-      paste0("patient:", patient_id),
-      paste0("reporter:", reporter_id),
-      paste0("severity:", severity)
-    )
-
-  # Determine log level based on severity (GVP Module VI)
-  log_level <- switch(severity,
-    "serious" = ERROR,
-    "severe" = WARNING,
-    "moderate" = NOTE,
-    "mild" = NOTE
-  )
-
-  ae_logger(log_level(
-    "adverse_event_reported",
-    ae_id = ae_id,
-    patient_id = patient_id,
-    patient_initials = get_patient_initials(patient_id),
-    reporter_id = reporter_id,
-    reporter_role = "site_investigator",
-    event_description = description,
-    severity = severity,
-    causality = causality_assessment,  # Related/Not Related/Uncertain
-    treatment_start_date = get_treatment_date(patient_id),
-    event_onset_date = Sys.Date(),
-    days_since_treatment_start = get_days_since_treatment(patient_id),
-    regulatory_reportable = (severity == "serious"),  # 15-day reporting required
-    report_timestamp_utc = format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z"),
-    audit_id = generate_uuid()
+# Audit primary efficacy analysis
+run_primary_efficacy_analysis <- function() {
+  # Log analysis start with full provenance
+  analysis_audit(NOTE(
+    "primary_efficacy_analysis_started",
+    analyst_id = Sys.getenv("USER"),
+    analyst_name = "Jane Statistician, PhD",
+    analysis_plan_version = "SAP_v3.0_final",
+    population = "ITT",  # Intent-to-treat
+    endpoint = "change_from_baseline_week_12",
+    input_dataset = "adeff.sas7bdat",
+    input_dataset_hash = digest::digest(file = "data/adeff.sas7bdat"),
+    input_n_subjects = 450,
+    r_version = as.character(getRversion()),
+    script_path = "programs/efficacy_primary.R",
+    git_commit = system("git rev-parse HEAD", intern = TRUE)
   ))
 
-  # If serious, log additional regulatory actions
-  if (severity == "serious") {
-    ae_logger(ERROR(
-      "regulatory_notification_required",
-      ae_id = ae_id,
-      notification_type = "FDA_MEDWATCH_15DAY",
-      deadline = Sys.Date() + 15,
-      notification_sent = FALSE
-    ))
-  }
+  # Run the analysis
+  results <- lm(change ~ treatment + baseline, data = efficacy_data)
+
+  # Log analysis completion
+  analysis_audit(NOTE(
+    "primary_efficacy_analysis_completed",
+    p_value = summary(results)$coefficients["treatmentActive", "Pr(>|t|)"],
+    treatment_effect = coef(results)["treatmentActive"],
+    confidence_interval = paste(confint(results)["treatmentActive", ], collapse = ", "),
+    output_tables = c("table_14_2_1.rtf", "table_14_2_2.rtf"),
+    output_figures = c("figure_14_2_1.png"),
+    analysis_duration_seconds = elapsed
+  ))
+
+  return(results)
 }
 ```
 
-**Pharmacovigilance compliance achieved:**
-- ✅ GVP (Good Pharmacovigilance Practices) audit trail
-- ✅ ICH E2A reporting with full traceability
-- ✅ Patient confidentiality (initials only, no PII in logs)
-- ✅ Causality assessment documented
-- ✅ Regulatory reporting deadlines tracked
+**Why this matters for regulatory inspection:**
+- ✅ Proves analysis wasn't cherry-picked (git commit hash)
+- ✅ Documents input data integrity (file hash)
+- ✅ Traces output tables to analysis script
+- ✅ Shows analysis plan version used
+- ✅ Provides audit trail for FDA/EMA reviewers
+
+#### 2. Shiny Clinical Review Dashboard Audit
+
+**Common real use case:** Track medical monitor actions in Shiny dashboards for data review.
+
+```{r shiny-dashboard-audit, eval=FALSE}
+library(shiny)
+library(logthis)
+
+# Dashboard audit logger
+dashboard_audit <- logger() %>%
+  with_receivers(
+    to_json() %>% on_local(
+      path = "dashboard_audit.jsonl",
+      mode = "append"
+    ),
+    to_json() %>% on_s3(
+      bucket = "clinical-monitoring",
+      key_prefix = "trial_NCT123/dashboard_audit"
+    )
+  ) %>%
+  with_tags("app:adverse_event_review", "trial:NCT123")
+
+# Shiny server with audit logging
+server <- function(input, output, session) {
+  # Get user context from Shiny session
+  user_audit <- dashboard_audit %>%
+    with_tags(
+      paste0("user:", session$user),
+      paste0("session:", session$token)
+    )
+
+  # Log when user views an adverse event
+  observeEvent(input$ae_table_rows_selected, {
+    ae_id <- ae_data[input$ae_table_rows_selected, "ae_id"]
+
+    user_audit(NOTE(
+      "ae_record_viewed",
+      ae_id = ae_id,
+      user_id = session$user,
+      user_role = get_user_role(session$user),
+      view_timestamp = Sys.time()
+    ))
+  })
+
+  # Log when user flags a serious adverse event
+  observeEvent(input$btn_flag_serious, {
+    user_audit(WARNING(
+      "ae_flagged_as_serious",
+      ae_id = input$selected_ae_id,
+      user_id = session$user,
+      flagging_reason = input$serious_ae_reason,
+      requires_expedited_reporting = TRUE,
+      medical_monitor_notified = TRUE
+    ))
+
+    # Trigger notification workflow
+    notify_medical_monitor(input$selected_ae_id)
+  })
+
+  # Log data export actions (for audit trail)
+  observeEvent(input$btn_export_data, {
+    user_audit(NOTE(
+      "data_exported",
+      user_id = session$user,
+      export_type = input$export_format,  # CSV, PDF, etc.
+      filters_applied = list(
+        severity = input$filter_severity,
+        date_range = input$filter_dates
+      ),
+      records_exported = nrow(filtered_data())
+    ))
+  })
+}
+```
+
+**Why this matters:**
+- ✅ Documents who reviewed which AEs (required for medical monitoring)
+- ✅ Tracks critical decisions (flagging serious AEs)
+- ✅ Audit trail for data exports
+- ✅ Supports regulatory inspection of review process
+
+#### 3. Safety Signal Detection Pipeline
+
+**Realistic use case:** Audit automated safety monitoring scripts that detect signals from safety databases.
+
+```{r safety-signal-audit, eval=FALSE}
+# Safety signal detection audit logger
+signal_audit <- logger() %>%
+  with_receivers(
+    to_json() %>% on_local(
+      path = "safety_monitoring/signal_detection_audit.jsonl",
+      mode = "append"
+    ),
+    to_json() %>% on_s3(
+      bucket = "pharmacovigilance",
+      key_prefix = "signal_detection_logs"
+    ),
+    # Alert safety team if potential signal detected
+    to_console(lower = WARNING)
+  ) %>%
+  with_tags("drug:XYZ123", "monitoring:weekly_signal_detection")
+
+# Automated weekly safety signal detection
+run_weekly_signal_detection <- function() {
+  # Log analysis start
+  signal_audit(NOTE(
+    "signal_detection_analysis_started",
+    analysis_type = "disproportionality_analysis",
+    data_cutoff_date = Sys.Date(),
+    method = "bayesian_confidence_propagation",
+    threshold_ic025 = 0,  # Information Component lower bound
+    analyst = "automated_pipeline"
+  ))
+
+  # Query safety database (primary AE data is THERE, not in R)
+  ae_data <- DBI::dbGetQuery(safety_db, "
+    SELECT ae_term, count(*) as n_reports
+    FROM adverse_events
+    WHERE drug_exposure = 'XYZ123'
+      AND report_date >= CURRENT_DATE - INTERVAL '90 days'
+    GROUP BY ae_term
+  ")
+
+  # Run signal detection algorithm
+  signals <- detect_disproportionality(ae_data, method = "bcpnn")
+
+  # Log any potential signals detected
+  for (i in seq_len(nrow(signals))) {
+    if (signals$ic025[i] > 0) {  # Potential signal threshold
+      signal_audit(WARNING(
+        "potential_safety_signal_detected",
+        ae_term = signals$ae_term[i],
+        ic025 = signals$ic025[i],
+        n_reports = signals$n_reports[i],
+        reporting_rate = signals$reporting_rate[i],
+        recommendation = "Manual review by safety physician required",
+        priority = ifelse(signals$ic025[i] > 2, "high", "medium")
+      ))
+    }
+  }
+
+  # Log completion
+  signal_audit(NOTE(
+    "signal_detection_analysis_completed",
+    total_ae_terms_analyzed = nrow(ae_data),
+    signals_detected = sum(signals$ic025 > 0),
+    high_priority_signals = sum(signals$ic025 > 2),
+    next_review_date = Sys.Date() + 7
+  ))
+}
+```
+
+**Why this matters:**
+- ✅ Documents safety monitoring was performed (regulatory requirement)
+- ✅ Creates audit trail of signal detection runs
+- ✅ Alerts safety team to potential issues
+- ✅ Separates primary AE data (in database) from analysis (in R)
 
 ### Validation and CSV (Computer System Validation)
 
@@ -1030,28 +1057,29 @@ validation_log(NOTE(
 
 ### Comparison with Python Pharma Tools
 
-Python has mature pharma-specific libraries, but logthis offers comparable capabilities:
+**Where each tool fits in the pharma stack:**
 
-| Feature | Python (e.g., clinical-trial-audit) | logthis |
-|---------|-------------------------------------|---------|
-| **21 CFR Part 11 Support** | Built-in signature validation | Custom fields + signature helpers |
-| **ALCOA+ Compliance** | Automated checks | Design patterns + validation |
-| **GxP Integration** | Django/SQLAlchemy ORM hooks | Manual instrumentation |
-| **Audit Trail Queries** | SQL-based | JSON/Parquet + dplyr |
-| **Multi-cloud Redundancy** | Requires custom setup | Built-in (S3/Azure handlers) |
-| **R Statistical Integration** | Limited | Native (R-first design) |
-| **Validation Documentation** | Package-specific | Standard R package validation |
+| System Layer | Python Tools | logthis | Winner |
+|--------------|--------------|---------|--------|
+| **Primary Data Capture** | Django CTMS, Flask apps with audit | ❌ Not applicable | Python (R not used here) |
+| **Database Audit Logs** | PostgreSQL triggers, SQLAlchemy events | ❌ Not applicable | Database native features |
+| **Statistical Analysis Provenance** | Limited (notebooks, papermill) | ✅ **Native R audit logging** | **logthis** (R-first design) |
+| **Shiny Dashboards** | Limited (Python Dash with custom logging) | ✅ **Built-in Shiny integration** | **logthis** |
+| **Batch Data Pipelines** | Airflow + structlog | ✅ R script audit trails | Both good (different ecosystems) |
+| **Multi-cloud Storage** | Custom S3/Azure wrappers | ✅ Built-in receivers | **logthis** (simpler) |
 
-**When to use Python tools:**
-- Django/web application context with ORM
-- Existing Python clinical trial infrastructure
-- Need for GUI-based audit log review
+**Honest assessment - When to use logthis:**
+- ✅ **Statistical analysis for regulatory submissions** (THE killer use case)
+- ✅ **Shiny clinical review dashboards** (common in pharma)
+- ✅ **R-based safety monitoring pipelines**
+- ✅ **Data pipeline audit trails** (ETL from DB → R → submission)
+- ✅ **Automated report generation** (who ran what, when)
 
-**When to use logthis:**
-- R-based statistical analysis pipelines
-- Shiny clinical trial dashboards
-- Integration with R packages (e.g., `Tplyr`, `rtables` for regulatory tables)
-- Multi-cloud redundancy requirements
+**When logthis does NOT fit:**
+- ❌ Primary clinical trial data entry (use CTMS like Medidata/Veeva)
+- ❌ Manufacturing execution systems (use MES like Siemens/Rockwell)
+- ❌ Electronic health records (use Epic/Cerner audit trails)
+- ❌ Database-level access control (use PostgreSQL/Oracle audit features)
 
 ## Performance Considerations
 
