@@ -30,7 +30,8 @@ Suggests:
     httr2,
     arrow,
     aws.s3,
-    AzureStor
+    AzureStor,
+    mirai
 Imports:
     magrittr,
     glue

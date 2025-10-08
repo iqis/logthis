@@ -38,6 +38,19 @@
   - Log level to syslog severity mapping (0-7 scale)
   - Connection pooling with automatic reconnection
 
+### Async Logging (v0.2.0)
+* **Universal async wrapper**: `as_async()` makes ANY receiver asynchronous
+  - Works with all receivers: formatters, handlers, standalone receivers
+  - Pipe-friendly syntax: `to_text() %>% on_local("app.log") %>% as_async()`
+  - Requires `mirai` package for background execution
+  - Auto-initializes single daemon, supports daemon pools for parallel processing
+  - Buffering with configurable `flush_threshold` (default: 100 events)
+  - Backpressure handling with `max_queue_size` (default: 10000 events)
+  - Automatic cleanup via finalizers
+* **Alias**: `deferred()` as semantic alias for `as_async()`
+* **Performance**: 0.1-1ms latency to queue, 10k-50k events/sec throughput
+* **Use cases**: High-frequency logging, Shiny apps, non-blocking I/O
+
 ### Architecture Improvements
 * **Buffered receivers**: New `requires_buffering` flag for columnar formats
   - `.build_buffered_local_receiver()` for data frame accumulation
@@ -63,6 +76,7 @@
 ### New Suggests
 * `httr2` - for webhook and Teams receivers
 * `arrow` - for Parquet and Feather formatters
+* `mirai` - for async logging with `as_async()`
 * Removed `httr` (replaced by `httr2`)
 
 ## Bug Fixes
