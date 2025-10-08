@@ -450,6 +450,206 @@ process_request <- function(request_id) {
 - Want resilient error handling
 - Need cloud storage integration (S3, Azure)
 
+## Audit Logging in Production Systems
+
+One of the most critical use cases for logging is **audit trails** - immutable records of who did what, when, and why. This is essential for:
+
+- **Financial compliance** (SOX, PCI-DSS)
+- **Healthcare** (HIPAA)
+- **General data protection** (GDPR)
+- **Forensics and security** investigations
+
+### Python Audit Logging Approaches
+
+#### 1. Django-Specific Solutions
+
+**django-auditlog** - The most popular Django audit logging library:
+
+```python
+from auditlog.registry import auditlog
+from django.db import models
+
+class Transaction(models.Model):
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    account = models.CharField(max_length=50)
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+# Register for automatic audit logging
+auditlog.register(Transaction)
+
+# Every create/update/delete is automatically logged with:
+# - User who made the change
+# - Timestamp
+# - Changes in JSON format
+# - IP address (optional)
+```
+
+**django-simple-history** - Stores full model snapshots:
+
+```python
+from simple_history.models import HistoricalRecords
+
+class Transaction(models.Model):
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    history = HistoricalRecords()  # Automatically tracks all changes
+
+# Query historical records
+transaction.history.all()  # All versions
+transaction.history.as_of('2024-01-01')  # State at specific time
+```
+
+#### 2. General Python Audit Logging Patterns
+
+**Structured logging with context**:
+
+```python
+import structlog
+
+logger = structlog.get_logger()
+
+# Bind user context
+logger = logger.bind(
+    user_id=request.user.id,
+    session_id=request.session.session_key,
+    ip_address=request.META['REMOTE_ADDR']
+)
+
+# Log business events with full context
+logger.info(
+    "transaction_completed",
+    transaction_id=txn.id,
+    amount=float(txn.amount),
+    account=txn.account,
+    timestamp=txn.timestamp.isoformat()
+)
+```
+
+**Python's built-in audit hooks** (Python 3.8+):
+
+```python
+import sys
+
+def audit_hook(event, args):
+    if event == 'open':
+        filename, mode, flags = args
+        log_security_event(f"File access: {filename} ({mode})")
+
+sys.addaudithook(audit_hook)
+```
+
+### logthis Audit Logging Approach
+
+logthis is uniquely suited for audit trails through its **tagging system** and **immutable event records**:
+
+```{r audit-logging-logthis, eval=FALSE}
+# Create audit logger with required fields
+audit_log <- logger() %>%
+  with_receivers(
+    # Immutable append-only JSON log
+    to_json() %>% on_local(
+      path = "audit.jsonl",
+      mode = "append"
+    ),
+    # Redundant cloud backup for compliance
+    to_json() %>% on_s3(
+      bucket = "compliance-logs",
+      key_prefix = "audit/transactions"
+    )
+  ) %>%
+  with_tags("audit", "financial")
+
+# Log transaction with full context
+process_transaction <- function(user_id, amount, account) {
+  # Bind user context via tags
+  txn_logger <- audit_log %>%
+    with_tags(
+      paste0("user:", user_id),
+      paste0("session:", session$id),
+      paste0("ip:", session$remote_addr)
+    )
+
+  # Log the transaction with structured fields
+  txn_logger(NOTE(
+    "transaction_completed",
+    transaction_id = generate_id(),
+    user_id = user_id,
+    amount = amount,
+    account = account,
+    timestamp = Sys.time()
+  ))
+
+  # Transaction processing logic...
+}
+```
+
+**JSONL output** (one line per transaction):
+
+```json
+{"time":"2024-10-08T10:30:45Z","level":"NOTE","level_number":30,"message":"transaction_completed","tags":["audit","financial","user:12345","session:abc123","ip:192.168.1.100"],"transaction_id":"txn_xyz","user_id":12345,"amount":1500.00,"account":"ACC-001","timestamp":"2024-10-08T10:30:45Z"}
+```
+
+### Audit Trail Best Practices: Python vs logthis
+
+| Requirement | Python (django-auditlog) | Python (structlog) | logthis |
+|-------------|-------------------------|-------------------|---------|
+| **Immutable Records** | Database-backed | Append-only files | Append-only files + cloud |
+| **Who** (Actor) | Automatic via middleware | Manual binding | Tags + custom fields |
+| **What** (Action) | Model changes (JSON diff) | Custom event fields | Custom event fields |
+| **When** (Timestamp) | Automatic | Automatic | Automatic |
+| **Where** (Location) | IP via middleware | Manual binding | Tags |
+| **Why** (Reason) | Optional change_reason field | Custom fields | Custom fields |
+| **Context Binding** | Request-scoped | Logger.bind() | with_tags() |
+| **Compliance Storage** | PostgreSQL WORM | ELK/Splunk/S3 | S3/Azure + local |
+
+### Key Advantages of logthis for Audit Logging
+
+1. **Tag-based context**: Hierarchical tags naturally represent user → session → transaction relationships
+
+2. **Redundant storage**: Easy to send audit logs to multiple destinations simultaneously:
+   ```r
+   to_json() %>% on_local("audit.jsonl")  # Local compliance
+   to_json() %>% on_s3(bucket = "audit")  # Cloud backup
+   to_json() %>% on_azure(container = "audit")  # Multi-cloud redundancy
+   ```
+
+3. **Scope-based auditing**: Enable detailed logging only for sensitive operations:
+   ```r
+   process_sensitive_data <- function() {
+     # Enhance audit logging in this scope only
+     audit_log <- audit_log %>%
+       with_tags("sensitive_data_access") %>%
+       with_receivers(
+         to_json() %>% on_local("sensitive_audit.jsonl")
+       )
+
+     # All logs in this scope get extra tracking
+     audit_log(NOTE("data_accessed", record_id = 123))
+   }
+   ```
+
+4. **Functional immutability**: Loggers are immutable; can't accidentally modify audit configuration
+
+5. **Resilient receivers**: If one audit destination fails, others continue (critical for compliance)
+
+### Compliance Considerations
+
+**Both Python and logthis support:**
+- Tamper-proof logs (append-only, WORM storage)
+- Retention policies (archival to cold storage)
+- Encryption in transit and at rest
+- Centralized log aggregation
+- Machine-readable structured formats (JSON)
+
+**logthis advantages:**
+- Simpler multi-cloud redundancy
+- Built-in failover between audit destinations
+- Tag-based provenance tracking (see [Tagging and Provenance](tagging-and-provenance.html))
+
+**Python/Django advantages:**
+- Deeper ORM integration (automatic model change tracking)
+- Built-in admin interface for viewing audit logs
+- Ecosystem of compliance-focused packages
+
 ## Performance Considerations
 
 ### Python Solutions
