@@ -1,12 +1,21 @@
 # logthis - AI Assistant Context
 
-**Last Updated:** 2025-10-07
+**Last Updated:** 2025-10-08
 **Package Version:** 0.1.0.9000
 **Status:** Production-ready, CRAN submission pending
 
 ## Project Overview
 
-`logthis` is a structured logging framework for R that provides enterprise-level logging capabilities similar to log4j or Python's logging module. It uses functional composition patterns and is designed for R packages, Shiny applications, and data analysis pipelines.
+`logthis` is a structured logging framework for R that provides enterprise-level logging capabilities similar to log4j or Python's logging module. It uses functional composition patterns and is designed for R packages, Shiny applications, data analysis pipelines, and **pharmaceutical/clinical compliance systems**.
+
+**Key Use Cases:**
+- R package development logging
+- Shiny application debugging and monitoring
+- Data pipeline audit trails
+- **Pharmaceutical audit trails** (21 CFR Part 11, ALCOA+, GxP compliance)
+- Clinical trial data access logging
+- Manufacturing batch records (GMP)
+- Pharmacovigilance adverse event reporting
 
 **Core Philosophy:**
 - Functional, composable design with pipe-friendly syntax
@@ -107,6 +116,22 @@ my_function <- function() {
 
 **Coverage:** 84.30% (Shiny receivers untestable without active session)
 **Test Count:** 130 passing tests
+
+### Vignettes (vignettes/)
+- **getting-started.Rmd** - Quick introduction to logthis for new users
+- **tagging-and-provenance.Rmd** - Using tags for context and audit trails
+- **patterns.Rmd** - Common logging patterns and best practices
+- **advanced-receivers.Rmd** - Cloud storage, webhooks, and custom receivers
+- **python-comparison.Rmd** - Comprehensive comparison with Python logging ecosystem
+  - Architecture comparison (logging, loguru, structlog)
+  - General audit logging patterns (Django, structlog)
+  - **Pharmaceutical and clinical audit trails** (21 CFR Part 11, ALCOA+, GxP)
+    - Clinical trial data access logging
+    - Manufacturing batch records (GMP compliance)
+    - Pharmacovigilance adverse event reporting
+    - Computer System Validation (CSV) documentation
+    - Electronic signatures and regulatory compliance
+- **migration-guide.Rmd** - Migrating from other R logging packages
 
 ## Code Conventions
 
