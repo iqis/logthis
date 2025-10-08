@@ -75,7 +75,11 @@ reference:
   contents:
   - to_console
   - to_shinyalert
+  - to_sweetalert
   - to_notif
+  - to_show_toast
+  - to_toastr
+  - to_js_console
 
 - title: Formatters
   desc: Format log events for output

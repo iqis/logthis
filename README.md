@@ -25,10 +25,25 @@
 - 🏷️ **Flexible Tagging System** - Track provenance, context, and categorization with hierarchical tags
 
 ### ⭐ Shiny Integration (No Python Equivalent)
-- **Built-in UI receivers** - `to_shinyalert()` for modal alerts, `to_notif()` for toast notifications
-- **Automatic level routing** - Errors → modals, warnings → toasts, all configurable
+logthis provides **6 Shiny UI receivers** with zero custom JavaScript required:
+
+**Modal Alerts:**
+- `to_shinyalert()` - Classic modal alerts (shinyalert package)
+- `to_sweetalert()` - Modern SweetAlert2 modals (shinyWidgets package)
+
+**Toast Notifications:**
+- `to_notif()` - Base Shiny notifications
+- `to_show_toast()` - shinyWidgets toast notifications
+- `to_toastr()` - toastr.js toast notifications (shinytoastr package)
+
+**Developer Tools:**
+- `to_js_console()` ⭐ - **Unique feature**: Send R logs to browser DevTools console for debugging
+
+**Key advantages:**
+- **Semantic color consistency** - Errors → red, warnings → yellow, success → green across all receivers
+- **Automatic level routing** - One logger, multiple notification styles
 - **Session integration** - Bind user context from Shiny sessions for audit trails
-- **Unified logging** - Same logger handles both user alerts AND backend audit logs
+- **Unified logging** - Same logger for user alerts AND backend audit logs
 - **Zero custom JavaScript** - Unlike Python Dash/Streamlit which require manual notification systems
 
 ## 🤖 AI-Forward Development & AI-Friendly Design
@@ -219,11 +234,17 @@ to_syslog(
 #### Shiny Integration
 
 ```r
-# Shiny alerts (requires shinyalert package)
-to_shinyalert(lower = WARNING, upper = HIGHEST)
+# Modal Alerts
+to_shinyalert(lower = WARNING, upper = HIGHEST)  # Classic modal alerts
+to_sweetalert(lower = ERROR)                     # Modern SweetAlert2 modals (shinyWidgets)
 
-# Shiny notifications (requires shiny package)
-to_notif(lower = NOTE, upper = WARNING)
+# Toast Notifications
+to_notif(lower = NOTE, upper = WARNING)          # Base Shiny notifications
+to_show_toast(lower = NOTE, upper = WARNING)     # shinyWidgets toasts
+to_toastr(lower = NOTE, upper = WARNING)         # toastr.js toasts (shinytoastr)
+
+# Browser Console (UNIQUE FEATURE - no Python equivalent!)
+to_js_console()  # Send R logs to browser DevTools console for debugging
 ```
 
 #### Testing & Development
@@ -642,20 +663,26 @@ process_request <- function(request_id) {
 library(shiny)
 library(logthis)
 
-# Setup logging for Shiny app
+# Setup logging for Shiny app with multiple UI receivers
 log_this <- logger() %>%
     with_receivers(
-        to_console(lower = NOTE),
-        to_shinyalert(lower = ERROR)
+        to_console(lower = NOTE),                   # R console for developers
+        to_js_console(),                            # Browser console for debugging
+        to_shinyalert(lower = ERROR),               # Modal alerts for errors
+        to_show_toast(lower = WARNING, upper = WARNING)  # Toast for warnings
     )
 
 server <- function(input, output, session) {
     observeEvent(input$submit, {
         tryCatch({
             # Your app logic here
-            log_this(NOTE("User submitted form"))
+            log_this(NOTE("User submitted form"))  # Shows in consoles only
+
+            if (input$value < 0) {
+                log_this(WARNING("Negative value entered"))  # Shows as toast
+            }
         }, error = function(e) {
-            log_this(ERROR(paste("Form submission failed:", e$message)))
+            log_this(ERROR(paste("Form submission failed:", e$message)))  # Shows as modal
         })
     })
 }

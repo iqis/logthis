@@ -61,12 +61,15 @@ print(result$tags)
 Create custom levels that automatically tag all events:
 
 ```{r level-tags}
-# Create a critical error level that auto-tags for alerting
-CRITICAL <- ERROR %>% with_tags("critical", "pagerduty", "alert")
+# Create a custom critical error level that auto-tags for alerting
+# Note: Built-in levels (ERROR, WARNING, etc.) cannot be tagged
+# Solution: Create a custom level with log_event_level()
+CRITICAL_ALERT <- log_event_level("CRITICAL_ALERT", 95) %>%
+  with_tags("critical", "pagerduty", "alert")
 
 # All events from this level automatically carry these tags
-event1 <- CRITICAL("Database connection lost")
-event2 <- CRITICAL("Payment processor unreachable")
+event1 <- CRITICAL_ALERT("Database connection lost")
+event2 <- CRITICAL_ALERT("Payment processor unreachable")
 
 print(event1$tags)
 print(event2$tags)
@@ -95,8 +98,9 @@ print(result2$tags)
 When you combine all three levels, tags accumulate:
 
 ```{r tag-hierarchy}
-# 1. Create a tagged level
-AUTH_ERROR <- ERROR %>% with_tags("authentication")
+# 1. Create a custom tagged level (built-in levels can't be tagged)
+AUTH_ERROR <- log_event_level("AUTH_ERROR", 85) %>%
+  with_tags("authentication")
 
 # 2. Create a tagged logger
 log_service <- logger() %>%

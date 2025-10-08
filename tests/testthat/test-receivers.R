@@ -880,3 +880,109 @@ test_that("to_syslog() level-to-severity mapping is correct", {
   expect_silent(syslog(CRITICAL("test")))
   expect_silent(syslog(HIGHEST("test")))
 })
+
+# ============================================================================
+# SweetAlert Receiver Tests (to_sweetalert)
+# ============================================================================
+
+test_that("to_sweetalert() creates valid receiver", {
+  sweet <- to_sweetalert()
+
+  expect_s3_class(sweet, "log_receiver")
+  expect_s3_class(sweet, "function")
+})
+
+test_that("to_sweetalert() respects level filtering", {
+  skip_if_not_installed("shinyWidgets")
+  skip_if_not_installed("shiny")
+
+  sweet <- to_sweetalert(lower = WARNING, upper = ERROR)
+
+  # Should not error if shinyWidgets not installed (warning instead)
+  # These tests just verify receiver construction and filtering logic
+  expect_silent(sweet(NOTE("Should be filtered")))
+})
+
+# ============================================================================
+# shinyWidgets Toast Receiver Tests (to_show_toast)
+# ============================================================================
+
+test_that("to_show_toast() creates valid receiver", {
+  toast <- to_show_toast()
+
+  expect_s3_class(toast, "log_receiver")
+  expect_s3_class(toast, "function")
+})
+
+test_that("to_show_toast() respects level filtering", {
+  skip_if_not_installed("shinyWidgets")
+  skip_if_not_installed("shiny")
+
+  toast <- to_show_toast(lower = NOTE, upper = WARNING)
+
+  # Should not error if shinyWidgets not installed (warning instead)
+  expect_silent(toast(DEBUG("Should be filtered")))
+  expect_silent(toast(ERROR("Should be filtered")))
+})
+
+# ============================================================================
+# toastr.js Receiver Tests (to_toastr)
+# ============================================================================
+
+test_that("to_toastr() creates valid receiver", {
+  toastr <- to_toastr()
+
+  expect_s3_class(toastr, "log_receiver")
+  expect_s3_class(toastr, "function")
+})
+
+test_that("to_toastr() respects level filtering", {
+  skip_if_not_installed("shinytoastr")
+  skip_if_not_installed("shiny")
+
+  toastr <- to_toastr(lower = NOTE, upper = WARNING)
+
+  # Should not error if shinytoastr not installed (warning instead)
+  expect_silent(toastr(DEBUG("Should be filtered")))
+  expect_silent(toastr(ERROR("Should be filtered")))
+})
+
+# ============================================================================
+# JavaScript Console Receiver Tests (to_js_console)
+# ============================================================================
+
+test_that("to_js_console() creates valid receiver", {
+  js_console <- to_js_console()
+
+  expect_s3_class(js_console, "log_receiver")
+  expect_s3_class(js_console, "function")
+})
+
+test_that("to_js_console() respects level filtering", {
+  skip_if_not_installed("shinyjs")
+  skip_if_not_installed("shiny")
+
+  js_console <- to_js_console(lower = WARNING, upper = CRITICAL)
+
+  # Should not error if shinyjs not installed (warning instead)
+  expect_silent(js_console(DEBUG("Should be filtered")))
+  expect_silent(js_console(WARNING("Should attempt")))
+})
+
+test_that("to_js_console() accepts all log levels", {
+  skip_if_not_installed("shinyjs")
+  skip_if_not_installed("shiny")
+
+  # Verify receiver accepts all levels (even if it can't actually send without Shiny session)
+  js_console <- to_js_console(lower = LOWEST, upper = HIGHEST)
+
+  expect_silent(js_console(LOWEST("test")))
+  expect_silent(js_console(TRACE("test")))
+  expect_silent(js_console(DEBUG("test")))
+  expect_silent(js_console(NOTE("test")))
+  expect_silent(js_console(MESSAGE("test")))
+  expect_silent(js_console(WARNING("test")))
+  expect_silent(js_console(ERROR("test")))
+  expect_silent(js_console(CRITICAL("test")))
+  expect_silent(js_console(HIGHEST("test")))
+})

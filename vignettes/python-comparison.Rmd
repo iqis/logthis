@@ -331,19 +331,33 @@ log_this(NOTE("Message"))
 
 ### 5. Shiny Integration ⭐ MAJOR DIFFERENTIATOR
 
-**No Python equivalent exists.** Python web frameworks (Dash, Streamlit, Flask) require custom JavaScript and callbacks for user notifications. logthis provides **built-in UI receivers** that automatically show alerts to Shiny users:
+**No Python equivalent exists.** Python web frameworks (Dash, Streamlit, Flask) require custom JavaScript and callbacks for user notifications. logthis provides **6 built-in Shiny UI receivers** with zero custom JavaScript:
+
+**Modal Alerts:**
+- `to_shinyalert()` - Classic modal alerts (shinyalert package)
+- `to_sweetalert()` - Modern SweetAlert2 modals (shinyWidgets package)
+
+**Toast Notifications:**
+- `to_notif()` - Base Shiny notifications
+- `to_show_toast()` - shinyWidgets toast notifications
+- `to_toastr()` - toastr.js toast notifications (shinytoastr package)
+
+**Developer Tools:**
+- `to_js_console()` ⭐ **Unique feature**: Send R logs to browser DevTools console for debugging
 
 ```{r shiny-integration, eval=FALSE}
 library(shiny)
 library(logthis)
 
-# Setup logger with UI receivers
+# Setup logger with multiple UI receivers
 app_logger <- logger() %>%
   with_receivers(
-    to_console(lower = NOTE),              # Developer console
-    to_shinyalert(lower = ERROR),          # Modal alerts for errors
-    to_notif(lower = WARNING, upper = WARNING),  # Toast notifications for warnings
-    to_json() %>% on_local("app_audit.jsonl")    # Audit trail
+    to_console(lower = NOTE),                        # Developer console
+    to_js_console(lower = DEBUG),                    # Browser console (debugging)
+    to_sweetalert(lower = ERROR),                    # Modal alerts for errors
+    to_toastr(lower = WARNING, upper = WARNING),     # Toast notifications for warnings
+    to_show_toast(lower = NOTE, upper = NOTE),       # Success toasts
+    to_json() %>% on_local("app_audit.jsonl")        # Audit trail
   )
 
 server <- function(input, output, session) {
@@ -356,7 +370,10 @@ server <- function(input, output, session) {
 
   observeEvent(input$process_data, {
     tryCatch({
-      # Validation warnings automatically show as notifications
+      # Debug logging appears in browser console
+      user_logger(DEBUG("Process data button clicked"))
+
+      # Validation warnings automatically show as toast notifications
       if (nrow(input_data()) == 0) {
         user_logger(WARNING("No data to process"))
         return()
@@ -365,7 +382,7 @@ server <- function(input, output, session) {
       # Processing
       result <- process_data(input_data())
 
-      # Success message
+      # Success message shows as green toast
       user_logger(NOTE("Data processed successfully"))
 
     }, error = function(e) {
@@ -380,11 +397,13 @@ server <- function(input, output, session) {
 
 | Feature | Python (Dash/Streamlit/Flask) | logthis + Shiny |
 |---------|-------------------------------|-----------------|
-| **User notifications** | Custom JavaScript/callbacks required | ✅ Built-in `to_shinyalert()`, `to_notif()` |
+| **User notifications** | Custom JavaScript/callbacks required | ✅ **6 built-in receivers** - modals, toasts, console |
+| **Browser console integration** | ❌ Cannot send server logs to browser console | ✅ **`to_js_console()`** - R logs in DevTools |
 | **Session integration** | Manual context passing | ✅ Direct access to `session` object |
 | **Audit + UI in one** | Separate systems (logging vs notifications) | ✅ Same logger for both audit trail and user alerts |
 | **Level-based routing** | Manual if/else logic | ✅ Automatic (errors → modals, warnings → toasts) |
-| **Lines of code** | 50+ lines for notification system | ✅ 3 lines (`to_shinyalert()` + `to_notif()`) |
+| **Lines of code** | 50+ lines for notification system | ✅ 3-6 lines (one receiver per notification type) |
+| **Semantic color consistency** | Manual CSS/theming | ✅ Automatic (errors=red, warnings=yellow, success=green) |
 
 **Real-world impact:**
 - **Pharma clinical dashboards** - Medical monitors get instant alerts for serious AEs
@@ -482,7 +501,8 @@ process_request <- function(request_id) {
 - Working with log aggregation systems (ELK, Datadog)
 
 ### Choose `logthis` when:
-- **Building Shiny applications** ⭐ (no Python equivalent for Dash/Streamlit)
+- **Building Shiny applications** ⭐ (6 built-in UI receivers: to_shinyalert, to_sweetalert, to_notif, to_show_toast, to_toastr, to_js_console) - no Python equivalent for Dash/Streamlit
+- **Need browser console integration** ⭐ to_js_console() sends R logs to DevTools - impossible in Python web frameworks
 - Working in R ecosystem
 - **Need functional, composable design** (pure R idioms with pipes)
 - Prefer explicit state over global configuration
