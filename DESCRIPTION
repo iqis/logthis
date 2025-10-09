@@ -30,10 +30,12 @@ Suggests:
     shinyWidgets,
     shinytoastr,
     jsonlite,
+    httr,
     httr2,
     arrow,
     aws.s3,
     AzureStor,
+    blastula,
     mirai,
     bench
 Imports:

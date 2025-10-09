@@ -26,3 +26,6 @@
 ^Meta$
 ^scratch\.md$
 ^CLAUDE\.md$
+^benchmarks$
+^check_output.*\.log$
+^cran-comments\.md$

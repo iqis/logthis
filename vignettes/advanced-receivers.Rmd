@@ -104,9 +104,11 @@ for (i in 1:10000) {
 }
 
 # Read back with arrow
-library(arrow)
-df <- read_parquet("events.parquet")
-head(df)
+if (requireNamespace("arrow", quietly = TRUE)) {
+  library(arrow)
+  df <- read_parquet("events.parquet")
+  head(df)
+}
 #   time                level level_number message           tags            item_id status
 #   2025-10-08 10:31:00 NOTE  30           Processing item   character(0)    1       complete
 #   2025-10-08 10:31:00 NOTE  30           Processing item   character(0)    2       complete
@@ -214,22 +216,27 @@ to_text() %>%
 # Store webhook URL securely in environment variable
 TEAMS_WEBHOOK_URL <- Sys.getenv("TEAMS_WEBHOOK_URL")
 
-log_teams <- logger() %>%
-  with_receivers(
-    to_console(),
-    to_teams(
-      webhook_url = TEAMS_WEBHOOK_URL,
-      title = "Production Alerts",
-      lower = WARNING,  # Only send WARNING and above to Teams
-      upper = HIGHEST
-    )
-  ) %>%
-  with_tags("production", "api-server")
+# Only run if webhook URL is configured
+if (nzchar(TEAMS_WEBHOOK_URL)) {
+  log_teams <- logger() %>%
+    with_receivers(
+      to_console(),
+      to_teams(
+        webhook_url = TEAMS_WEBHOOK_URL,
+        title = "Production Alerts",
+        lower = WARNING,  # Only send WARNING and above to Teams
+        upper = HIGHEST
+      )
+    ) %>%
+    with_tags("production", "api-server")
 
-# These will appear in Teams as color-coded cards
-log_teams(WARNING("High memory usage", memory_mb = 8192, threshold_mb = 6144))
-log_teams(ERROR("Database connection lost", db_host = "prod-db-01", retry_count = 3))
-log_teams(CRITICAL("Service outage detected", service = "payment-api", duration_sec = 120))
+  # These will appear in Teams as color-coded cards
+  log_teams(WARNING("High memory usage", memory_mb = 8192, threshold_mb = 6144))
+  log_teams(ERROR("Database connection lost", db_host = "prod-db-01", retry_count = 3))
+  log_teams(CRITICAL("Service outage detected", service = "payment-api", duration_sec = 120))
+} else {
+  message("Skipping Teams integration (TEAMS_WEBHOOK_URL not set)")
+}
 ```
 
 ### Teams Card Appearance:
@@ -331,49 +338,53 @@ to_syslog(
 
 ```{r s3-basic}
 # JSON logs to S3
-library(aws.s3)
+if (requireNamespace("aws.s3", quietly = TRUE)) {
+  library(aws.s3)
 
-s3_endpoint <- s3_bucket("my-logs-bucket")
+  s3_endpoint <- s3_bucket("my-logs-bucket")
 
-log_s3 <- logger() %>%
-  with_receivers(
-    to_json() %>%
-      on_s3(
-        bucket = "my-logs-bucket",
-        key_prefix = "app/events",  # Creates app/events/YYYY-MM-DD-HH-MM-SS.jsonl
-        region = "us-west-2",
-        flush_threshold = 100  # Batch 100 events before uploading
-      )
-  )
+  log_s3 <- logger() %>%
+    with_receivers(
+      to_json() %>%
+        on_s3(
+          bucket = "my-logs-bucket",
+          key_prefix = "app/events",  # Creates app/events/YYYY-MM-DD-HH-MM-SS.jsonl
+          region = "us-west-2",
+          flush_threshold = 100  # Batch 100 events before uploading
+        )
+    )
 
-# Parquet to S3 for analytics
-to_parquet() %>%
-  on_s3(
-    bucket = "my-logs-bucket",
-    key_prefix = "analytics/events",
-    region = "us-west-2",
-    flush_threshold = 1000
-  )
+  # Parquet to S3 for analytics
+  to_parquet() %>%
+    on_s3(
+      bucket = "my-logs-bucket",
+      key_prefix = "analytics/events",
+      region = "us-west-2",
+      flush_threshold = 1000
+    )
+}
 ```
 
 ### Azure Blob Storage
 
 ```{r azure-basic}
 # JSON logs to Azure
-library(AzureStor)
+if (requireNamespace("AzureStor", quietly = TRUE)) {
+  library(AzureStor)
 
-endpoint <- storage_endpoint(Sys.getenv("AZURE_STORAGE_ENDPOINT"))
+  endpoint <- storage_endpoint(Sys.getenv("AZURE_STORAGE_ENDPOINT"))
 
-log_azure <- logger() %>%
-  with_receivers(
-    to_json() %>%
-      on_azure(
-        container = "logs",
-        blob = "app/events.jsonl",
-        endpoint = endpoint,
-        flush_threshold = 100
-      )
-  )
+  log_azure <- logger() %>%
+    with_receivers(
+      to_json() %>%
+        on_azure(
+          container = "logs",
+          blob = "app/events.jsonl",
+          endpoint = endpoint,
+          flush_threshold = 100
+        )
+    )
+}
 ```
 
 ---

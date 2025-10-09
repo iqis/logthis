@@ -18,6 +18,7 @@
 - 🎨 **Multiple Output Receivers** - Send logs to console, files, cloud storage, and more
 - ⚙️ **Configurable Filtering** - Set min/max level limits to control output
 - 🔧 **Composable Design** - Use functional programming patterns with pipes
+- ⚡ **Middleware Pipeline** - Transform events with PII redaction, context enrichment, and sampling
 - 🔗 **Logger Chaining** - Chain multiple loggers together for complex routing
 - 📋 **Scope-Based Enhancement** - Add receivers within specific scopes without affecting parent loggers
 - 🌈 **Color-Coded Console Output** - Visual distinction for different log levels
@@ -45,6 +46,104 @@ logthis provides **6 Shiny UI receivers** with zero custom JavaScript required:
 - **Session integration** - Bind user context from Shiny sessions for audit trails
 - **Unified logging** - Same logger for user alerts AND backend audit logs
 - **Zero custom JavaScript** - Unlike Python Dash/Streamlit which require manual notification systems
+
+## Architecture
+
+### Event Flow
+
+```mermaid
+flowchart LR
+    A[Event Created] --> MW[Middleware Pipeline\nwith_middleware]
+    MW -->|Transform| B{Logger Filter\nwith_limits}
+    MW -->|Drop NULL| X0[Drop Event]
+    B -->|Pass| C[Apply Logger Tags\nwith_tags]
+    B -->|Block| X[Drop Event]
+    C --> D[Receivers]
+
+    D --> R1{Receiver 1\nFilter}
+    D --> R2{Receiver 2\nFilter}
+    D --> R3{Receiver 3\nFilter}
+
+    R1 -->|Pass| O1[Console Output]
+    R1 -->|Block| X1[Drop]
+
+    R2 -->|Pass| O2[File Output]
+    R2 -->|Block| X2[Drop]
+
+    R3 -->|Pass| O3[Cloud/Network\nOutput]
+    R3 -->|Block| X3[Drop]
+
+    style A fill:#4CAF50,stroke:#2E7D32,color:#fff
+    style MW fill:#E91E63,stroke:#880E4F,color:#fff
+    style B fill:#2196F3,stroke:#1565C0,color:#fff
+    style C fill:#9C27B0,stroke:#6A1B9A,color:#fff
+    style D fill:#FF9800,stroke:#E65100,color:#fff
+    style R1 fill:#03A9F4,stroke:#01579B,color:#fff
+    style R2 fill:#03A9F4,stroke:#01579B,color:#fff
+    style R3 fill:#03A9F4,stroke:#01579B,color:#fff
+    style O1 fill:#4CAF50,stroke:#2E7D32,color:#fff
+    style O2 fill:#4CAF50,stroke:#2E7D32,color:#fff
+    style O3 fill:#4CAF50,stroke:#2E7D32,color:#fff
+```
+
+### Two-Level Filtering
+
+logthis implements **two independent levels** of filtering for maximum flexibility:
+
+```r
+log_this <- logger() %>%
+  # Level 1: Logger Filter (early rejection)
+  with_limits(lower = TRACE, upper = HIGHEST) %>%
+
+  # Level 2: Receiver Filters (per-output control)
+  with_receivers(
+    to_console(lower = DEBUG),                    # Console: DEBUG+
+    to_text() %>% on_local("app.log") %>%
+      with_limits(lower = NOTE),                  # File: NOTE+
+    to_email(...) %>% with_limits(lower = ERROR)  # Email: ERROR+
+  )
+```
+
+**Benefits:**
+- **Early rejection** at logger level saves processing time
+- **Per-receiver control** allows different outputs to see different event levels
+- **Independent configuration** - each receiver can filter independently
+
+### Logger Chaining
+
+Events flow through logger chain and are processed by each logger's receivers:
+
+```r
+# Event flows through BOTH loggers
+WARNING("msg") %>% log_console() %>% log_file()
+
+# Result: event is processed by:
+#   1. log_console()'s receivers (console output)
+#   2. log_file()'s receivers (file output)
+```
+
+### Scope-Based Masking
+
+Create child loggers within specific scopes without affecting parent logger:
+
+```r
+# Parent logger (global scope)
+log_this <- logger() %>% with_receivers(to_console())
+
+my_function <- function() {
+  # Child logger (function scope) - adds file receiver
+  log_this <- log_this %>% with_receivers(to_text() %>% on_local("scope.log"))
+
+  log_this(NOTE("This goes to BOTH console AND file"))
+}
+
+# Outside function, only console receiver exists
+log_this(NOTE("This goes ONLY to console"))
+```
+
+**Pattern:** R's lexical scoping + functional updates = safe local enhancement
+
+---
 
 ## 🤖 AI-Forward Development & AI-Friendly Design
 
@@ -228,6 +327,20 @@ to_syslog(
   transport = "udp",     # or "tcp", "unix"
   facility = "user",
   app_name = "myapp"
+)
+
+# Email notifications (batched, plain text, default: ERROR and above)
+to_email(
+  to = "alerts@example.com",
+  from = "app@example.com",
+  subject_template = "[{level}] Application Alerts",
+  smtp_settings = blastula::creds_envvar(
+    user = "SMTP_USER",
+    pass = "SMTP_PASS",
+    host = "smtp.gmail.com",
+    port = 587
+  ),
+  batch_size = 10
 )
 ```
 
@@ -445,6 +558,202 @@ on.exit(flush(log_this), add = TRUE)
 log_this <- logger() %>%
   with_receivers(to_console(), to_identity())  # Auto-named receiver_1, receiver_2
 ```
+
+## Middleware
+
+Middleware functions transform log events **before** they reach receivers, enabling powerful cross-cutting concerns like PII redaction, context enrichment, and event sampling.
+
+### Basic Middleware
+
+```r
+# Create middleware that adds hostname to all events
+add_hostname <- middleware(function(event) {
+  event$hostname <- Sys.info()[["nodename"]]
+  event
+})
+
+log_this <- logger() %>%
+  with_middleware(add_hostname) %>%
+  with_receivers(to_json() %>% on_local("app.jsonl"))
+
+log_this(NOTE("Application started"))
+# → JSON includes "hostname": "server-01"
+```
+
+### Common Middleware Patterns
+
+#### PII Redaction (GDPR/HIPAA Compliance)
+
+```r
+# Redact credit cards and emails
+redact_pii <- middleware(function(event) {
+  # Credit cards
+  event$message <- gsub(
+    "(\\d{4})[-\\s]?(\\d{4})[-\\s]?(\\d{4})[-\\s]?(\\d{4})",
+    "****-****-****-\\4",
+    event$message
+  )
+
+  # Email addresses (keep domain for debugging)
+  event$message <- gsub(
+    "\\b[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\\.[A-Za-z]{2,})\\b",
+    "***@\\1",
+    event$message
+  )
+
+  event
+})
+
+log_this <- logger() %>%
+  with_middleware(redact_pii) %>%
+  with_receivers(to_console())
+
+log_this(NOTE("Payment: card 4532-1234-5678-9010 for user@example.com"))
+# Output: "Payment: card ****-****-****-9010 for ***@example.com"
+```
+
+#### Context Enrichment (Distributed Tracing)
+
+```r
+# Add application context automatically
+add_context <- function(app_name, app_version) {
+  middleware(function(event) {
+    event$app_name <- app_name
+    event$app_version <- app_version
+    event$environment <- Sys.getenv("ENV", "development")
+    event$hostname <- Sys.info()[["nodename"]]
+    event
+  })
+}
+
+log_this <- logger() %>%
+  with_middleware(add_context("my-api", "1.2.3")) %>%
+  with_receivers(to_json() %>% on_local("app.jsonl"))
+```
+
+#### Performance Timing
+
+```r
+# Calculate durations automatically
+add_duration <- middleware(function(event) {
+  if (!is.null(event$start_time)) {
+    event$duration_ms <- as.numeric(Sys.time() - event$start_time) * 1000
+    event$start_time <- NULL  # Remove from output
+  }
+  event
+})
+
+log_this <- logger() %>%
+  with_middleware(add_duration) %>%
+  with_receivers(to_console())
+
+start_time <- Sys.time()
+# ... expensive operation ...
+log_this(NOTE("Query completed", start_time = start_time))
+# Output: duration_ms: 523
+```
+
+#### Event Sampling (Volume Control)
+
+```r
+# Keep all warnings/errors, sample DEBUG logs at 1%
+sample_by_level <- middleware(function(event) {
+  # Never drop warnings or errors
+  if (event$level_number >= attr(WARNING, "level_number")) {
+    return(event)
+  }
+
+  # Sample DEBUG at 1%
+  if (event$level_class == "DEBUG" && runif(1) > 0.01) {
+    return(NULL)  # Drop event
+  }
+
+  event
+})
+
+log_this <- logger() %>%
+  with_middleware(sample_by_level) %>%
+  with_receivers(to_json() %>% on_local("app.jsonl"))
+
+# High-frequency DEBUG logs are sampled aggressively
+for (i in 1:1000) {
+  log_this(DEBUG(paste("Event", i)))  # Only ~10 logged
+}
+```
+
+### Middleware Pipeline Ordering
+
+Middleware executes in order: **security first, sampling last**
+
+```r
+log_this <- logger() %>%
+  with_middleware(
+    redact_pii,         # 1. Security (redact PII)
+    add_context,        # 2. Enrich (add context)
+    add_duration,       # 3. Performance (calculate durations)
+    sample_by_level     # 4. Sample (reduce volume)
+  ) %>%
+  with_receivers(
+    to_console(lower = WARNING),
+    to_json() %>% on_local("app.jsonl")
+  )
+```
+
+### Receiver-Level Middleware
+
+**Same `with_middleware()` function works on both loggers AND receivers!**
+
+```r
+# Different PII redaction per receiver
+redact_full <- middleware(function(event) {
+  event$message <- gsub("\\d{3}-\\d{2}-\\d{4}", "***-**-****", event$message)
+  event
+})
+
+redact_partial <- middleware(function(event) {
+  event$message <- gsub("(\\d{3}-\\d{2}-)\\d{4}", "\\1****", event$message)
+  event
+})
+
+logger() %>%
+  with_receivers(
+    # Console: full SSN redaction
+    to_console() %>% with_middleware(redact_full),
+
+    # Internal: partial redaction (last 4 digits visible)
+    to_json() %>% on_local("internal.jsonl") %>%
+      with_middleware(redact_partial),
+
+    # Secure vault: no redaction
+    to_json() %>% on_s3(bucket = "vault", key = "full.jsonl")
+  )
+
+log_this(NOTE("Patient SSN: 123-45-6789"))
+# Console: "Patient SSN: ***-**-****"
+# Internal: "Patient SSN: 123-45-****"
+# Vault: "Patient SSN: 123-45-6789" (original)
+```
+
+**Execution order:**
+```
+Event → Logger Middleware → Logger Filter → Logger Tags →
+  Receiver 1 Middleware → Receiver 1 Output
+  Receiver 2 Middleware → Receiver 2 Output
+```
+
+**Use cases:**
+- **Differential PII redaction** - Different privacy levels per receiver
+- **Cost optimization** - Sample before expensive cloud logging
+- **Format-specific enrichment** - Add fields only for specific outputs
+
+### More Examples
+
+See `examples/middleware/` for comprehensive examples:
+- `redact_pii.R` - Credit card, SSN, email redaction
+- `add_context.R` - System, application, user context enrichment
+- `add_shiny_context.R` - Shiny session, reactive context
+- `add_timing.R` - Duration calculation, performance classification
+- `sample_events.R` - Percentage, level-based, adaptive sampling
 
 ## Logger Chaining and Composition
 
@@ -997,6 +1306,252 @@ cd tests/cloud
 - Tests won't break regular CI/CD if services unavailable
 - Each test uses unique keys/blobs to avoid conflicts
 - Tests clean up after themselves
+
+## Troubleshooting
+
+### Common Issues
+
+#### Shiny Receivers Not Working
+
+**Problem:** Shiny receivers (`to_shinyalert()`, `to_notif()`, etc.) produce no output or errors.
+
+**Solution:**
+- Shiny receivers require an **active Shiny session**. They will silently fail outside Shiny apps.
+- Ensure you're running inside a Shiny reactive context (server function).
+- Check that required packages are installed:
+  ```r
+  # For different receivers
+  install.packages("shiny")        # Required for to_notif()
+  install.packages("shinyalert")   # Required for to_shinyalert()
+  install.packages("shinyWidgets")  # Required for to_sweetalert(), to_show_toast()
+  install.packages("shinytoastr")  # Required for to_toastr()
+  install.packages("shinyjs")      # Required for to_js_console()
+  ```
+
+**Example:**
+```r
+# ✗ Won't work - no Shiny session
+log_this <- logger() %>% with_receivers(to_shinyalert())
+log_this(WARNING("Test"))  # Silent failure
+
+# ✓ Works - inside Shiny server
+server <- function(input, output, session) {
+  log_this <- logger() %>% with_receivers(to_shinyalert())
+  log_this(WARNING("Test"))  # Shows alert
+}
+```
+
+---
+
+#### File Permission Errors
+
+**Problem:** `Error: Permission denied` when writing to log files.
+
+**Solution:**
+- Check directory write permissions: `file.access("/path/to/dir", 2) == 0`
+- Ensure parent directory exists: `dir.create("/path/to/dir", recursive = TRUE)`
+- On Linux/Mac, verify user has write access: `ls -la /path/to/dir`
+- On Windows, check folder permissions in Properties → Security
+
+**Example:**
+```r
+# Create directory if it doesn't exist
+log_dir <- "/var/log/myapp"
+if (!dir.exists(log_dir)) {
+  dir.create(log_dir, recursive = TRUE, mode = "0755")
+}
+
+# Verify write access
+if (file.access(log_dir, 2) != 0) {
+  stop("No write permission to ", log_dir)
+}
+
+# Now safe to use
+logger() %>%
+  with_receivers(to_text() %>% on_local(file.path(log_dir, "app.log")))
+```
+
+---
+
+#### Performance Bottlenecks
+
+**Problem:** Logging slows down application significantly.
+
+**Solutions:**
+
+1. **Use async logging** for file/network receivers:
+```r
+# Instead of this (slow)
+log_this <- logger() %>%
+  with_receivers(to_json() %>% on_local("app.jsonl"))
+
+# Use this (5-20x faster)
+log_this <- logger() %>%
+  with_receivers(to_json() %>% on_local("app.jsonl") %>% as_async())
+```
+
+2. **Use receiver-level filtering** to reduce processing:
+```r
+# Instead of this (processes all events)
+log_this <- logger() %>%
+  with_receivers(
+    to_console(),
+    to_text() %>% on_local("app.log")  # Writes everything
+  )
+
+# Use this (file only gets errors)
+log_this <- logger() %>%
+  with_receivers(
+    to_console(),
+    to_text() %>% on_local("app.log") %>% with_limits(lower = ERROR)
+  )
+```
+
+3. **Increase batch sizes** for buffered receivers:
+```r
+# Default: flush every 1000 events (may be too frequent)
+to_parquet() %>% on_local("logs.parquet", flush_threshold = 1000)
+
+# Better for high volume: flush every 10000 events
+to_parquet() %>% on_local("logs.parquet", flush_threshold = 10000)
+```
+
+4. **Use simpler formatters** when possible:
+```r
+# to_json() is slower (serialization overhead)
+to_json() %>% on_local("app.jsonl")
+
+# to_text() is faster (simple string interpolation)
+to_text() %>% on_local("app.log")
+```
+
+See `benchmarks/README.md` for detailed performance analysis.
+
+---
+
+#### Memory Issues with Large Log Volumes
+
+**Problem:** R session runs out of memory during heavy logging.
+
+**Solutions:**
+
+1. **Enable file rotation** to limit log file size:
+```r
+# Rotate when file exceeds 10MB, keep max 5 old files
+to_text() %>% on_local("app.log", max_size = 10e6, max_files = 5)
+```
+
+2. **Use async logging with backpressure** to prevent queue overflow:
+```r
+# Default max_queue_size = 10000 events (~10MB)
+to_text() %>% on_local("app.log") %>%
+  as_async(flush_threshold = 100, max_queue_size = 10000)
+
+# For lower memory: reduce queue size
+to_text() %>% on_local("app.log") %>%
+  as_async(flush_threshold = 50, max_queue_size = 1000)
+```
+
+3. **Avoid logging very large objects**:
+```r
+# ✗ Don't do this
+big_df <- data.frame(...)  # 100MB data frame
+log_this(NOTE("Data loaded", data = big_df))  # Copies entire df!
+
+# ✓ Do this instead
+log_this(NOTE("Data loaded",
+               rows = nrow(big_df),
+               cols = ncol(big_df),
+               size_mb = object.size(big_df) / 1e6))
+```
+
+4. **Use columnar formats** (Parquet/Feather) instead of JSON for analytics:
+```r
+# JSON is verbose and memory-intensive
+to_json() %>% on_local("logs.jsonl")  # ~1KB per event
+
+# Parquet is compact and efficient
+to_parquet() %>% on_local("logs.parquet")  # ~100 bytes per event
+```
+
+---
+
+### FAQ
+
+**Q: Can I use multiple receivers with different log levels?**
+
+Yes! Use receiver-level filtering with `with_limits()`:
+```r
+log_this <- logger() %>%
+  with_receivers(
+    to_console(lower = TRACE),           # Console shows everything
+    to_text() %>% on_local("app.log") %>%
+      with_limits(lower = NOTE),         # File shows NOTE+
+    to_email(...) %>%
+      with_limits(lower = ERROR)         # Email only for errors
+  )
+```
+
+**Q: How do I send logs to multiple files with different filters?**
+
+Create multiple file receivers with different level filters:
+```r
+log_this <- logger() %>%
+  with_receivers(
+    to_text() %>% on_local("debug.log") %>% with_limits(upper = DEBUG),
+    to_text() %>% on_local("app.log") %>% with_limits(lower = NOTE, upper = WARNING),
+    to_text() %>% on_local("error.log") %>% with_limits(lower = ERROR)
+  )
+```
+
+**Q: Can I change log levels at runtime?**
+
+Yes, by creating a new logger. Loggers are immutable, so use functional updates:
+```r
+# Start with verbose logging
+log_this <- logger() %>%
+  with_receivers(to_console()) %>%
+  with_limits(lower = TRACE)
+
+# Later, reduce verbosity (replace logger)
+log_this <- logger() %>%
+  with_receivers(to_console()) %>%
+  with_limits(lower = WARNING)
+```
+
+**Q: Do failed receivers stop other receivers from running?**
+
+No! logthis uses resilient error handling. If one receiver fails, others continue. Receiver errors are logged as ERROR events with the `receiver_error` tag.
+
+**Q: How do I test my logging without actual output?**
+
+Use `to_identity()` to capture events for inspection:
+```r
+# Capture events for testing
+log_capture <- logger() %>% with_receivers(to_identity())
+
+result <- log_capture(WARNING("Test message"))
+
+# Inspect captured event
+expect_equal(result$level_class, "WARNING")
+expect_equal(result$message, "Test message")
+```
+
+**Q: Can I use logthis in R packages?**
+
+Yes! Export a package-level logger or let users configure their own:
+```r
+# In your package R/logger.R
+#' @export
+my_logger <- logger() %>%
+  with_receivers(to_console()) %>%
+  with_tags(package = "mypackage")
+
+# Users can override
+options(mypackage.logger = logger() %>% with_receivers(to_text() %>% on_local("mypackage.log")))
+```
+
+---
 
 ## Contributing
 

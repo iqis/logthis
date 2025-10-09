@@ -129,6 +129,144 @@ This document outlines improvements to make logthis production-ready for CRAN su
   - Semantic color consistency across all notification types
   - Same logger for audit trails AND user interface feedback
 
+### ✅ Phase 12: Email Notifications & Code Organization (v0.2.0+)
+- **Implemented `to_email()` email notification receiver:**
+  - Plain text email notifications with batching (default: 10 events per email)
+  - SMTP delivery via blastula package (supports all major email providers)
+  - Configurable batch size to reduce email volume
+  - Support for multiple recipients (to, CC, BCC)
+  - Customizable subject template with glue syntax
+  - **Default level: ERROR** (only critical alerts by default)
+  - Finalizer ensures remaining batched events are sent on cleanup
+  - 6 comprehensive tests covering validation, filtering, and configuration
+  - Full documentation with SMTP setup examples
+  - Added blastula to DESCRIPTION Suggests
+- **Major code organization refactoring:**
+  - Split monolithic `receivers.R` (2778 lines) into 7 focused category files:
+    - `receiver-core.R` (4.1K) - Core constructors (`receiver()`, `formatter()`) and backend registry
+    - `receiver-formatters.R` (19K) - All format converters (text, JSON, CSV, Parquet, Feather)
+    - `receiver-handlers.R` (29K) - Backend handlers (local files, S3, Azure, webhooks) and builders
+    - `receiver-console.R` (3.3K) - Console and testing receivers (console, identity, void)
+    - `receiver-shiny.R` (12K) - All 6 Shiny UI receivers
+    - `receiver-network.R` (23K) - Network/protocol receivers (Teams, Syslog, Email)
+    - `receiver-async.R` (5.5K) - Async logging infrastructure (`as_async()`, `deferred()`)
+  - **Benefits:**
+    - Improved maintainability - easier to locate and modify specific receiver types
+    - Better Git history - changes to one receiver type don't pollute diffs for others
+    - Clearer dependencies - each file has a focused purpose
+    - Reduced cognitive load - largest file is 29K vs original 2778-line monolith
+- **Updated test suite:**
+  - All 190+ tests passing after refactoring
+  - Email receiver tests use mock SMTP credentials
+  - Level filtering and batching behavior verified
+- **Documentation updates:**
+  - README.md updated with email receiver example
+  - Roxygen2 docs regenerated successfully
+  - NAMESPACE exports verified
+
+### ✅ Phase 13: Middleware Pattern (v0.2.0+)
+- **Implemented middleware pipeline for event transformation:**
+  - `middleware()` constructor for creating middleware functions
+  - `with_middleware()` logger configuration method
+  - Middleware runs **before** logger filtering (can modify levels, add tags, drop events)
+  - Supports short-circuiting (return NULL to drop events)
+  - Multiple middleware execute in sequence
+  - Middleware chains accumulate across `with_middleware()` calls
+- **Created comprehensive example library (`examples/middleware/`):**
+  - `redact_pii.R` - Credit card, SSN, email, patient identifier redaction (GDPR/HIPAA/21CFR11)
+  - `add_context.R` - System, app, user, request ID, git commit context enrichment
+  - `add_shiny_context.R` - Shiny session, reactive, authentication context extraction
+  - `add_timing.R` - Duration calculation, performance classification, GxP timing
+  - `sample_events.R` - Percentage, level-based, adaptive, GxP-safe sampling
+  - `README.md` - Complete patterns guide with routing, chaining, ordering best practices
+- **Common middleware patterns documented:**
+  - **PII redaction:** Remove sensitive data before logging (GDPR/HIPAA compliance)
+  - **Context enrichment:** Automatically add hostname, app version, request ID (distributed tracing)
+  - **Performance timing:** Calculate durations from start_time fields
+  - **Event sampling:** Reduce log volume (keep errors, sample DEBUG at 1%)
+  - **Event routing:** Add flags for conditional receiver processing
+  - **Logger chaining:** Hierarchical logging (global/app/component loggers)
+  - **Middleware ordering:** Security first (redaction) → Enrichment → Performance → Sampling last
+- **Added 35+ comprehensive tests (`tests/testthat/test-middleware.R`):**
+  - Constructor validation (middleware creation)
+  - with_middleware() validation and chaining
+  - Execution order verification
+  - Short-circuiting (NULL return drops events)
+  - Integration with logger configuration (limits, tags, receivers)
+  - Real-world examples (PII redaction, context enrichment, sampling, duration)
+  - Scope-based masking and logger chaining
+  - Edge cases (NULL messages, Unicode, empty middleware lists)
+  - Performance-related middleware (rate limiting, escalation)
+  - All tests passing (225+ total tests)
+- **Updated documentation:**
+  - README.md - Added "Middleware" section with 5 common patterns
+    - Updated architecture flowchart to show middleware pipeline
+    - Added to features list (⚡ Middleware Pipeline)
+  - vignettes/patterns.Rmd - Added comprehensive "Pattern: Middleware for Event Transformation"
+    - 10 subsections covering all patterns
+    - GxP/pharmaceutical examples
+    - Router and logger chaining patterns
+    - Added to Pattern Index
+  - R/logger.R - Full roxygen2 documentation for middleware() and with_middleware()
+    - Extensive @examples sections
+    - @family logger_configuration tags
+    - Cross-references with @seealso
+- **Key use cases enabled:**
+  - **Compliance:** GDPR/HIPAA PII redaction, 21 CFR Part 11 audit trails
+  - **Observability:** Distributed tracing, request ID propagation, context enrichment
+  - **Performance:** Event sampling, rate limiting, volume control
+  - **Security:** Automatic PII/sensitive data redaction
+  - **Pharmaceutical:** GxP-compliant logging with patient ID redaction, timing audit
+
+### ✅ Phase 13.1: Receiver-Level Middleware (v0.2.0+)
+- **Implemented receiver-specific middleware via S3 method dispatch:**
+  - `with_middleware.log_receiver()` S3 method in `R/receiver-core.R` (lines 125-167)
+  - Same `with_middleware()` function works on both loggers AND receivers (polymorphic design)
+  - Receiver middleware runs **after** logger middleware and filtering
+  - Enables per-receiver transformations (different redaction/sampling per output)
+- **Execution order:**
+  ```
+  Event → Logger Middleware → Logger Filter → Logger Tags →
+    Receiver 1 Middleware → Receiver 1 Output
+    Receiver 2 Middleware → Receiver 2 Output
+  ```
+- **Implementation features:**
+  - Wraps receiver to apply middleware before execution
+  - Short-circuit support (return NULL drops event for that receiver)
+  - Middleware chains accumulate across multiple `with_middleware()` calls
+  - Preserves receiver class and attaches middleware list as attribute
+  - Validates all arguments are functions with clear error messages
+- **Key use cases:**
+  - **Differential PII redaction:** Full redaction for console, partial for internal logs, none for secure vault
+  - **Cost optimization:** Sample events before expensive cloud logging (10% to S3, 100% to local)
+  - **Format-specific enrichment:** Add fields only for specific receivers
+  - **Security compliance:** Different privacy levels per output destination
+- **Added 11 comprehensive tests (`tests/testthat/test-middleware.R`):**
+  - Receiver middleware application and isolation (doesn't affect other receivers)
+  - Short-circuiting (NULL return drops events)
+  - Middleware chaining and accumulation
+  - Execution order (logger middleware → receiver middleware)
+  - Different middleware per receiver (differential redaction pattern)
+  - Cost optimization use case (sampling before cloud upload)
+  - Integration with logger-level middleware
+  - All tests passing (236+ total tests)
+- **Updated documentation:**
+  - `R/receiver-core.R` - Full roxygen2 documentation with extensive examples
+    - Differential PII redaction example (full vs partial vs none)
+    - Cost optimization example (10% sampling before cloud)
+    - Execution order diagram
+    - Cross-references with logger-level middleware
+  - `examples/middleware/README.md` - Added "Pattern 7.1: Receiver-Level Middleware" section
+    - Complete code examples with SSN redaction
+    - Execution order explanation
+    - Use case descriptions
+  - `README.md` - Updated "Receiver-Level Middleware" section with examples
+- **Industry standard validation:**
+  - Pattern matches Python `logging.Filter` (handler-level filters)
+  - Similar to log4j/Logback appender filters
+  - Comparable to Winston transport-level transformations
+  - Aligns with Serilog sink-specific enrichment
+
 ---
 
 ## Recent Accomplishments (2025-10-08) - v0.1.0 Feature Complete
@@ -385,30 +523,45 @@ Note: Allows fine-grained control over which events each receiver accepts. Users
   - Solutions and workarounds
 - [x] 7 unique feature deep-dives with examples
 
-### 4.3 Add Troubleshooting Section
-**Tasks:**
-- [ ] Create "Troubleshooting" section in README
-- [ ] Document common issues:
-  - Shiny session requirements
-  - File permission errors
-  - Performance bottlenecks
-  - Memory issues with large log volumes
-- [ ] Add FAQ subsection
+### 4.3 Add Troubleshooting Section ✅
+**Status:** Complete (v0.2.0+)
+**Completed:**
+- [x] Create "Troubleshooting" section in README
+- [x] Document common issues:
+  - [x] Shiny session requirements
+  - [x] File permission errors
+  - [x] Performance bottlenecks
+  - [x] Memory issues with large log volumes
+- [x] Add FAQ subsection with 7 common questions
+- [x] Practical code examples for each issue
+- [x] Solutions and workarounds documented
 
-### 4.4 Create Architecture Diagram
-**Tasks:**
-- [ ] Design visual flow: Event → Logger Filter → Receivers → Receiver Filters → Output
-- [ ] Add diagram to README (after Features section)
-- [ ] Show how logger chaining works visually
-- [ ] Illustrate scope-based masking pattern
+### 4.4 Create Architecture Diagram ✅
+**Status:** Complete (v0.2.0+)
+**Completed:**
+- [x] Design visual flow: Event → Logger Filter → Receivers → Receiver Filters → Output
+- [x] Add mermaid diagram to README (after Features section)
+- [x] Show how logger chaining works visually
+- [x] Illustrate scope-based masking pattern
+- [x] Color-coded components for clarity
+- [x] Documentation for two-level filtering
+- [x] Examples for each pattern
 
-### 4.5 Improve roxygen2 Documentation
-**Tasks:**
-- [ ] Add `@family` tags to group related functions
-- [ ] Add more `@seealso` cross-references
-- [ ] Ensure all exported functions have complete `@examples`
-- [ ] Add `@return` details for all functions
-- [ ] Review and improve parameter descriptions
+### 4.5 Improve roxygen2 Documentation ✅
+**Status:** Complete (v0.2.0+)
+**Completed:**
+- [x] Add `@family` tags to group related functions
+  - [x] constructors, formatters, handlers, receivers, async
+- [x] Add more `@seealso` cross-references
+  - [x] Formatters → handlers (all combinations)
+  - [x] Handlers → formatters (bidirectional)
+  - [x] Shiny receivers cross-reference each other (6 receivers)
+  - [x] Network receivers cross-reference (Teams, Syslog, Email)
+  - [x] Testing receivers cross-reference
+  - [x] Async functions reference each other
+- [x] All exported functions have complete `@examples`
+- [x] All functions have detailed `@return` documentation
+- [x] Parameter descriptions reviewed and enhanced
 
 ---
 
@@ -444,7 +597,7 @@ Note: Allows fine-grained control over which events each receiver accepts. Users
 ## Phase 6: Nice-to-Have Enhancements
 
 ### 6.1 Additional Receivers
-**Status:** Partially complete (v0.1.0-v0.2.0)
+**Status:** ✅ Complete (v0.1.0-v0.2.0)
 **Completed:**
 - [x] `to_syslog()` - system log integration ✅ (v0.1.0)
   - RFC 3164/5424 support
@@ -469,12 +622,16 @@ Note: Allows fine-grained control over which events each receiver accepts. Users
 - [x] `to_feather()` - fast Arrow IPC format ✅ (v0.1.0)
   - Similar to Parquet but optimized for speed
   - Good for Python interoperability
+- [x] `to_email()` - email notifications ✅ (v0.2.0)
+  - Plain text batched email alerts
+  - SMTP delivery via blastula package
+  - Multiple recipients (to, CC, BCC)
+  - Default level: ERROR
 
-**Future:**
-- [ ] `to_email()` - email notifications
-- [ ] `to_slack()` - Slack webhooks (skipped per user request)
-- [ ] `to_discord()` - Discord webhooks (skipped per user request)
-- [ ] `to_pagerduty()` - PagerDuty integration (skipped per user request)
+**Not Implemented (Per User Request):**
+- Slack webhooks (skipped per user request)
+- Discord webhooks (skipped per user request)
+- PagerDuty integration (skipped per user request)
 
 ### 6.2 Advanced Features
 **Tasks:**

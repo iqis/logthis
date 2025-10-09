@@ -591,6 +591,423 @@ result <- timed_operation("database_query", {
 
 ---
 
+## Pattern: Middleware for Event Transformation
+**Tags**: `#middleware`, `#transformation`, `#pipeline`, `#cross-cutting`
+
+Transform events before they reach receivers using middleware.
+
+### What is Middleware?
+
+Middleware functions transform log events in a pipeline:
+
+```
+Event → Middleware 1 → Middleware 2 → Logger Filter → Receivers
+```
+
+Each middleware can:
+- Transform the event (add fields, modify message)
+- Drop the event (return NULL to short-circuit)
+- Pass through unchanged
+
+### Basic Middleware
+
+```{r eval=FALSE}
+# Create middleware function
+add_hostname <- middleware(function(event) {
+  event$hostname <- Sys.info()[["nodename"]]
+  event
+})
+
+# Apply to logger
+log_this <- logger() %>%
+  with_middleware(add_hostname) %>%
+  with_receivers(to_json() %>% on_local("app.jsonl"))
+
+log_this(NOTE("Test message"))
+# → JSON includes "hostname": "server-01"
+```
+
+**When to use**: Add context automatically, reduce repetitive code, centralize transformations.
+
+### PII Redaction
+
+```{r eval=FALSE}
+# Redact credit cards
+redact_cc <- middleware(function(event) {
+  event$message <- gsub(
+    "(\\d{4})[-\\s]?(\\d{4})[-\\s]?(\\d{4})[-\\s]?(\\d{4})",
+    "****-****-****-\\4",
+    event$message
+  )
+  event
+})
+
+# Redact emails
+redact_email <- middleware(function(event) {
+  event$message <- gsub(
+    "\\b[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\\.[A-Za-z]{2,})\\b",
+    "***@\\1",
+    event$message
+  )
+  event
+})
+
+log_this <- logger() %>%
+  with_middleware(redact_cc, redact_email) %>%
+  with_receivers(
+    to_console(),
+    to_json() %>% on_local("app.jsonl")
+  )
+
+log_this(NOTE("Payment: card 4532-1234-5678-9010 for user@example.com"))
+# Output: "Payment: card ****-****-****-9010 for ***@example.com"
+```
+
+**When to use**: GDPR compliance, HIPAA compliance, protect sensitive data, production logging.
+
+### Context Enrichment
+
+```{r eval=FALSE}
+# Add application context
+add_app_context <- middleware(function(event) {
+  event$app_name <- "my-api"
+  event$app_version <- "1.2.3"
+  event$environment <- Sys.getenv("ENV", "development")
+  event$hostname <- Sys.info()[["nodename"]]
+  event
+})
+
+# Add request ID (distributed tracing)
+add_request_id <- function(request_id) {
+  middleware(function(event) {
+    event$request_id <- request_id
+    event
+  })
+}
+
+# Apply multiple middleware
+handle_request <- function(req) {
+  request_id <- req$headers[["X-Request-ID"]] %||% generate_id()
+
+  log_this <- logger() %>%
+    with_middleware(
+      add_app_context,
+      add_request_id(request_id)
+    ) %>%
+    with_receivers(to_json() %>% on_local("requests.jsonl"))
+
+  log_this(NOTE("Request received", method = req$method, path = req$path))
+  # → Includes app_name, app_version, environment, hostname, request_id
+}
+```
+
+**When to use**: Microservices, distributed tracing, observability, multi-tenant apps.
+
+### Performance Timing
+
+```{r eval=FALSE}
+# Calculate duration from start_time field
+add_duration <- middleware(function(event) {
+  if (!is.null(event$start_time)) {
+    event$duration_ms <- as.numeric(Sys.time() - event$start_time) * 1000
+    event$start_time <- NULL  # Remove from output
+  }
+  event
+})
+
+# Classify performance
+classify_performance <- middleware(function(event) {
+  if (!is.null(event$duration_ms)) {
+    if (event$duration_ms < 100) {
+      event$performance_class <- "fast"
+    } else if (event$duration_ms < 1000) {
+      event$performance_class <- "acceptable"
+    } else {
+      event$performance_class <- "slow"
+    }
+  }
+  event
+})
+
+log_this <- logger() %>%
+  with_middleware(add_duration, classify_performance) %>%
+  with_receivers(to_console())
+
+start_time <- Sys.time()
+# ... expensive operation ...
+Sys.sleep(0.5)
+log_this(NOTE("Query completed", start_time = start_time))
+# Output: duration_ms: 500, performance_class: acceptable
+```
+
+**When to use**: API monitoring, query optimization, SLA tracking, performance analysis.
+
+### Event Sampling (Volume Control)
+
+```{r eval=FALSE}
+# Sample DEBUG events (keep only 10%)
+sample_debug <- middleware(function(event) {
+  if (event$level_class == "DEBUG" && runif(1) > 0.1) {
+    return(NULL)  # Drop event
+  }
+  event
+})
+
+# Level-based sampling
+sample_by_level <- middleware(function(event) {
+  # Keep all warnings and errors
+  if (event$level_number >= attr(WARNING, "level_number")) {
+    return(event)
+  }
+
+  # Sample DEBUG at 1%
+  if (event$level_class == "DEBUG" && runif(1) > 0.01) {
+    return(NULL)
+  }
+
+  # Sample NOTE at 10%
+  if (event$level_class == "NOTE" && runif(1) > 0.1) {
+    return(NULL)
+  }
+
+  event
+})
+
+log_this <- logger() %>%
+  with_middleware(sample_by_level) %>%
+  with_receivers(to_json() %>% on_local("app.jsonl"))
+
+# High-frequency DEBUG logs are sampled aggressively
+for (i in 1:1000) {
+  log_this(DEBUG(paste("Event", i)))  # Only ~10 logged
+}
+```
+
+**When to use**: High-throughput systems, cost reduction (cloud logging), production optimization.
+
+### Event Routing
+
+```{r eval=FALSE}
+# Add routing flags with middleware
+route_events <- middleware(function(event) {
+  # Critical errors go to PagerDuty
+  if (event$level_number >= attr(ERROR, "level_number")) {
+    event$route_to_pagerduty <- TRUE
+  }
+
+  # Security events go to SIEM
+  if (!is.null(event$tags) && "security" %in% event$tags) {
+    event$route_to_siem <- TRUE
+  }
+
+  event
+})
+
+# Receivers filter on flags
+pagerduty_receiver <- receiver(function(event) {
+  if (isTRUE(event$route_to_pagerduty)) {
+    # ... send to PagerDuty
+  }
+  invisible(NULL)
+})
+
+log_this <- logger() %>%
+  with_middleware(route_events) %>%
+  with_receivers(
+    pagerduty_receiver,
+    to_json() %>% on_local("app.jsonl")  # All events
+  )
+```
+
+**When to use**: Multi-destination routing, conditional alerting, event classification.
+
+### Logger Chaining (Hierarchical Logging)
+
+```{r eval=FALSE}
+# Global logger (errors to S3)
+log_global <- logger() %>%
+  with_middleware(add_app_context) %>%
+  with_limits(lower = ERROR) %>%
+  with_receivers(to_json() %>% on_s3(bucket = "global-logs", key = "errors.jsonl"))
+
+# Application logger (all events)
+log_app <- logger() %>%
+  with_middleware(add_app_context, add_duration) %>%
+  with_receivers(to_json() %>% on_local("app.jsonl"))
+
+# Component logger (database-specific)
+log_db <- logger() %>%
+  with_middleware(add_duration, classify_performance) %>%
+  with_tags("database") %>%
+  with_receivers(to_text() %>% on_local("database.log"))
+
+# Chain loggers
+ERROR("Database connection failed", retry_count = 3) %>%
+  log_global() %>%   # → S3 (global errors)
+  log_app() %>%      # → local app.jsonl
+  log_db()           # → database.log
+
+# Event flows through all loggers in chain
+```
+
+**When to use**: Centralized error logging, multi-tier architectures, different concerns per logger.
+
+### Middleware Execution Order
+
+```{r eval=FALSE}
+# Order matters!
+log_this <- logger() %>%
+  with_middleware(
+    # 1. Security first (redact PII before anything else)
+    redact_pii,
+
+    # 2. Enrichment (add context)
+    add_app_context,
+    add_request_id,
+
+    # 3. Performance (calculate durations)
+    add_duration,
+    classify_performance,
+
+    # 4. Routing (add flags)
+    route_events,
+
+    # 5. Sampling last (after enrichment, reduce volume)
+    sample_by_level
+  ) %>%
+  with_receivers(
+    to_console(lower = WARNING),
+    to_json() %>% on_local("app.jsonl")
+  )
+```
+
+**When to use**: Always order middleware intentionally - security first, sampling last.
+
+### Short-Circuiting (Dropping Events)
+
+```{r eval=FALSE}
+# Middleware can drop events by returning NULL
+drop_noisy_events <- middleware(function(event) {
+  # Drop frequent cache hit messages
+  if (grepl("cache hit", event$message, ignore.case = TRUE)) {
+    return(NULL)
+  }
+
+  event
+})
+
+log_this <- logger() %>%
+  with_middleware(drop_noisy_events) %>%
+  with_receivers(to_console())
+
+log_this(DEBUG("Cache hit for key: user_123"))  # Dropped
+log_this(WARNING("Cache miss, slow query"))     # Kept
+```
+
+**When to use**: Filter noise, implement business rules, conditional logging.
+
+### Scope-Based Middleware Chaining
+
+```{r eval=FALSE}
+# Parent logger with middleware
+log_this <- logger() %>%
+  with_middleware(add_app_context) %>%
+  with_receivers(to_console())
+
+log_this(NOTE("Parent scope"))  # Has app context
+
+# Child scope adds MORE middleware
+my_function <- function() {
+  log_this <- log_this %>%
+    with_middleware(add_request_id("REQ-123"))
+
+  log_this(NOTE("Child scope"))  # Has app context AND request ID
+}
+my_function()
+
+# Back to parent scope
+log_this(NOTE("Parent again"))  # Only app context
+```
+
+**When to use**: Function-specific context, request-scoped loggers, modular systems.
+
+### Pharmaceutical/GxP Example
+
+```{r eval=FALSE}
+# GxP-compliant middleware stack
+redact_patient_ids <- middleware(function(event) {
+  # Redact patient identifiers
+  event$message <- gsub(
+    "\\b(PT|PATIENT|SUBJECT)-?\\d+\\b",
+    "[PATIENT-ID-REDACTED]",
+    event$message,
+    ignore.case = TRUE
+  )
+  event
+})
+
+add_gxp_context <- function(study_id, operator_id) {
+  middleware(function(event) {
+    event$study_id <- study_id
+    event$operator_id <- operator_id
+    event$system_id <- "LIMS-PROD-001"
+    event$timestamp_iso <- format(event$time, "%Y-%m-%dT%H:%M:%S%z")
+    event
+  })
+}
+
+# NEVER drop audit-critical events
+sample_gxp_safe <- middleware(function(event) {
+  critical_tags <- c("GxP", "audit_trail", "21CFR11", "regulatory")
+
+  # Never drop audit tags
+  if (!is.null(event$tags) && any(event$tags %in% critical_tags)) {
+    return(event)
+  }
+
+  # Never drop warnings/errors
+  if (event$level_number >= attr(WARNING, "level_number")) {
+    return(event)
+  }
+
+  # Sample DEBUG only
+  if (event$level_class == "DEBUG" && runif(1) > 0.05) {
+    return(NULL)
+  }
+
+  event
+})
+
+log_clinical <- logger() %>%
+  with_middleware(
+    redact_patient_ids,
+    add_gxp_context(study_id = "TRIAL-2024-001", operator_id = "OP-12345"),
+    sample_gxp_safe
+  ) %>%
+  with_tags("GxP", "audit_trail") %>%
+  with_receivers(
+    to_json() %>% on_local("gxp_audit.jsonl")
+  )
+
+log_clinical(NOTE("Sample analysis completed", sample_id = "SMP-001"))
+# → Includes study_id, operator_id, system_id, timestamp_iso
+# → Patient IDs redacted
+# → Never dropped (audit tag)
+```
+
+**When to use**: 21 CFR Part 11 compliance, clinical trials, pharmaceutical manufacturing.
+
+### More Examples
+
+See `examples/middleware/` for comprehensive examples:
+- `redact_pii.R` - Credit card, SSN, email redaction
+- `add_context.R` - System, application, user context enrichment
+- `add_shiny_context.R` - Shiny session, reactive context
+- `add_timing.R` - Duration calculation, performance classification
+- `sample_events.R` - Percentage, level-based, adaptive sampling
+
+---
+
 ## Pattern Index
 
 | Pattern | Tags | Section |
@@ -614,6 +1031,7 @@ result <- timed_operation("database_query", {
 | Request Tracing | `#tracing`, `#request-id`, `#distributed` | [Link](#pattern-request-tracing) |
 | Security Events | `#security`, `#audit`, `#compliance` | [Link](#pattern-security-event-logging) |
 | Performance Monitoring | `#performance`, `#metrics`, `#timing` | [Link](#pattern-performance-monitoring) |
+| **Middleware** | `#middleware`, `#transformation`, `#pipeline` | [Link](#pattern-middleware-for-event-transformation) |
 
 ---
 

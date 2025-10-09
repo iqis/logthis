@@ -25,6 +25,9 @@ cloud_test_config <- list(
 
   # Check if LocalStack is running
   check_s3 = function() {
+    if (!requireNamespace("httr", quietly = TRUE)) {
+      return(FALSE)
+    }
     tryCatch({
       response <- httr::GET(
         "http://localhost:4566/_localstack/health",
@@ -38,6 +41,9 @@ cloud_test_config <- list(
 
   # Check if Azurite is running
   check_azure = function() {
+    if (!requireNamespace("httr", quietly = TRUE)) {
+      return(FALSE)
+    }
     tryCatch({
       response <- httr::GET(
         "http://127.0.0.1:10000/devstoreaccount1?comp=list",

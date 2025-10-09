@@ -46,6 +46,17 @@ logger <- function(){
     config <- attr(sys.function(),
                    "config")
 
+    # Apply middleware transformations (before filtering)
+    if (!is.null(config$middleware) && length(config$middleware) > 0) {
+      for (mw_fn in config$middleware) {
+        event <- mw_fn(event)
+        if (is.null(event)) {
+          # Middleware short-circuited (dropped event)
+          return(invisible(NULL))
+        }
+      }
+    }
+
     # Logger-level filtering: check if event level is within logger limits (inclusive)
     if (event$level_number < config$limits$lower ||
         event$level_number > config$limits$upper) {
@@ -111,7 +122,8 @@ logger <- function(){
                 receivers = list(),
                 receiver_labels = list(),
                 receiver_names = character(0),
-                tags = NULL))
+                tags = NULL,
+                middleware = list()))
 }
 
 #' @export
@@ -127,7 +139,8 @@ void_logger <- function(){
                 receivers = list(),
                 receiver_labels = list(),
                 receiver_names = character(0),
-                tags = NULL))
+                tags = NULL,
+                middleware = list()))
 }
 
 #' Add receivers to a logger
@@ -352,6 +365,15 @@ with_limits.logger <- function(x, lower = LOWEST, upper = HIGHEST, ...){
                       "  See: R/log_event_levels.R for standard levels"))
     }
     config$limits$upper <- upper
+  }
+
+  # Validate lower <= upper
+  if (!is.null(lower) && !is.null(upper)) {
+    if (lower > upper) {
+      stop(glue::glue("Lower limit ({lower}) must be less than or equal to upper limit ({upper})\n",
+                      "  Solution: Ensure lower <= upper\n",
+                      "  Example: with_limits(lower = NOTE, upper = ERROR) # NOTE(30) < ERROR(80)"))
+    }
   }
 
   attr(logger, "config") <- config
@@ -648,5 +670,202 @@ with_tags.logger <- function(x, ..., append = TRUE){
   }
   attr(logger, "config") <- config
 
+  logger
+}
+
+# ==============================================================================
+# Middleware Pattern (Event Transformations)
+# ==============================================================================
+
+#' Create middleware function
+#'
+#' Creates a middleware function that transforms log events before they reach
+#' receivers. Middleware functions receive an event and return a (possibly
+#' modified) event, or NULL to drop the event entirely.
+#'
+#' Middleware is useful for:
+#' - **PII redaction**: Remove sensitive data from all logs
+#' - **Context enrichment**: Add hostname, user ID, request ID automatically
+#' - **Event sampling**: Drop a percentage of DEBUG/TRACE events for performance
+#' - **Conditional routing**: Add flags based on event content for filtering
+#' - **Performance timing**: Calculate durations from start_time fields
+#'
+#' @param transform_fn Function that takes a log event and returns a modified
+#'   event (or NULL to drop). Signature: `function(event) -> event | NULL`
+#'
+#' @return log_middleware; <log_middleware>
+#' @export
+#' @family logger_configuration
+#'
+#' @section Type Contract:
+#' ```
+#' middleware(transform_fn: function(log_event) -> log_event | NULL) -> log_middleware
+#' ```
+#'
+#' @examples
+#' # PII redaction middleware
+#' redact_ssn <- middleware(function(event) {
+#'   event$message <- gsub("\\d{3}-\\d{2}-\\d{4}", "***-**-****", event$message)
+#'   event
+#' })
+#'
+#' # Context enrichment
+#' add_hostname <- middleware(function(event) {
+#'   event$hostname <- Sys.info()["nodename"]
+#'   event
+#' })
+#'
+#' # Event sampling (drop 90% of DEBUG logs)
+#' sample_debug <- middleware(function(event) {
+#'   if (event$level_class == "DEBUG" && runif(1) > 0.1) {
+#'     return(NULL)  # Drop event
+#'   }
+#'   event
+#' })
+#'
+#' # Apply middleware to logger
+#' logger() %>%
+#'   with_middleware(redact_ssn, add_hostname, sample_debug) %>%
+#'   with_receivers(to_console())
+#'
+#' @seealso [with_middleware()] for applying middleware to loggers
+middleware <- function(transform_fn) {
+  if (!is.function(transform_fn)) {
+    stop("`transform_fn` must be a function")
+  }
+
+  structure(transform_fn,
+            class = c("log_middleware", "function"))
+}
+
+#' Apply middleware to logger
+#'
+#' Applies one or more middleware functions to a logger. Middleware transforms
+#' events before they reach receivers, enabling cross-cutting concerns like
+#' PII redaction, context enrichment, and event sampling.
+#'
+#' Middleware is applied in the order specified. Each middleware receives the
+#' event (possibly modified by previous middleware) and can:
+#' - Return the event unchanged
+#' - Return a modified event
+#' - Return NULL to drop the event (short-circuit)
+#'
+#' Middleware runs **before** logger-level filtering (`with_limits()`), so it
+#' can modify event levels or drop events before filtering occurs.
+#'
+#' @param x A logger (for logger method) or log_receiver (for receiver method) to apply middleware to
+#' @param ... One or more middleware functions (created with `middleware()` or
+#'   plain functions)
+#'
+#' @return logger with middleware applied (logger method) or receiver with middleware applied (receiver method)
+#' @export
+#' @family logger_configuration
+#'
+#' @section Type Contract:
+#' ```
+#' with_middleware(logger: logger,
+#'                 ...: log_middleware | function) -> logger
+#' ```
+#'
+#' @section Execution Order:
+#' ```
+#' Event → Middleware 1 → Middleware 2 → ... → Logger Filter → Logger Tags → Receivers
+#' ```
+#'
+#' @examples
+#' \dontrun{
+#' # Single middleware
+#' add_context <- middleware(function(event) {
+#'   event$hostname <- Sys.info()["nodename"]
+#'   event$env <- Sys.getenv("ENV", "dev")
+#'   event
+#' })
+#'
+#' log_this <- logger() %>%
+#'   with_middleware(add_context) %>%
+#'   with_receivers(to_console())
+#'
+#' # Multiple middleware (applied in order)
+#' redact_pii <- middleware(function(event) {
+#'   # Redact credit cards
+#'   event$message <- gsub(
+#'     "(\\d{4})-(\\d{4})-(\\d{4})-(\\d{4})",
+#'     "****-****-****-\\4",
+#'     event$message
+#'   )
+#'   event
+#' })
+#'
+#' add_timing <- middleware(function(event) {
+#'   if (!is.null(event$start_time)) {
+#'     event$duration_ms <- as.numeric(Sys.time() - event$start_time) * 1000
+#'     event$start_time <- NULL  # Remove from output
+#'   }
+#'   event
+#' })
+#'
+#' sample_debug <- middleware(function(event) {
+#'   # Keep only 10% of DEBUG logs
+#'   if (event$level_class == "DEBUG" && runif(1) > 0.1) {
+#'     return(NULL)  # Drop event
+#'   }
+#'   event
+#' })
+#'
+#' log_this <- logger() %>%
+#'   with_middleware(
+#'     redact_pii,      # First: security
+#'     add_context,     # Then: enrich
+#'     add_timing,      # Then: calculate
+#'     sample_debug     # Finally: sample
+#'   ) %>%
+#'   with_receivers(to_console(), to_json() %>% on_local("app.jsonl"))
+#'
+#' # Use it - middleware applied automatically
+#' start <- Sys.time()
+#' log_this(NOTE("Processing payment for card 1234-5678-9012-3456", start_time = start))
+#' # Output: "Processing payment for card ****-****-****-3456"
+#' # With: hostname, env, duration_ms added automatically
+#'
+#' # Plain functions work too (no need for middleware() wrapper)
+#' my_transform <- function(event) {
+#'   event$custom_field <- "value"
+#'   event
+#' }
+#'
+#' logger() %>%
+#'   with_middleware(my_transform) %>%
+#'   with_receivers(to_console())
+#' }
+#'
+#' @seealso [middleware()] for creating middleware functions
+with_middleware <- function(x, ...) {
+  UseMethod("with_middleware", x)
+}
+
+#' @export
+#' @rdname with_middleware
+with_middleware.logger <- function(x, ...) {
+  logger <- x
+  middleware_fns <- list(...)
+
+  # Validate all are functions
+  for (i in seq_along(middleware_fns)) {
+    mw <- middleware_fns[[i]]
+    if (!is.function(mw)) {
+      stop("`with_middleware()` requires function arguments. ",
+           "Argument ", i, " is <", class(mw)[1], ">.\n",
+           "  Solution: Pass functions created with middleware() or plain functions\n",
+           "  Example: with_middleware(middleware(function(event) event), ...)")
+    }
+  }
+
+  # Get logger config and add middleware
+  config <- attr(logger, "config")
+  existing_middleware <- config$middleware %||% list()
+  config$middleware <- c(existing_middleware, middleware_fns)
+
+  # Return logger with updated config
+  attr(logger, "config") <- config
   logger
 }

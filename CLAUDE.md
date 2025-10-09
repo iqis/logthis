@@ -27,7 +27,9 @@
 
 ### Event Flow
 ```
-Event � Logger Filter (with_limits) � Apply Logger Tags � Receivers � Receiver Filters � Output
+Event → Logger Middleware → Logger Filter (with_limits) → Apply Logger Tags →
+  Receiver 1 Middleware → Receiver 1 Filter → Receiver 1 Output
+  Receiver 2 Middleware → Receiver 2 Filter → Receiver 2 Output
 ```
 
 ### Core Components
@@ -35,7 +37,8 @@ Event � Logger Filter (with_limits) � Apply Logger Tags � Receivers � Re
 1. **Log Events** - Structured data with metadata (message, time, level, tags, custom fields)
 2. **Event Levels** - Hierarchical 0-100 scale (LOWEST=0, TRACE=10, DEBUG=20, NOTE=30, MESSAGE=40, WARNING=60, ERROR=80, CRITICAL=90, HIGHEST=100)
 3. **Loggers** - Functions that process events through configured receivers
-4. **Receivers** - Functions that output events (console, files, Shiny alerts, etc.)
+4. **Middleware** - Functions that transform events (logger-level or receiver-level)
+5. **Receivers** - Functions that output events (console, files, Shiny alerts, etc.)
 
 ### Design Patterns
 
@@ -87,6 +90,32 @@ my_function <- function() {
   log_this(NOTE("Only in this scope"))
 }
 ```
+
+**Middleware Pattern:**
+```r
+# Logger-level middleware (transforms ALL events before filtering)
+log_this <- logger() %>%
+  with_middleware(
+    redact_pii,           # Stage 1: Security
+    add_context,          # Stage 2: Enrichment
+    sample_by_level()     # Stage 3: Volume control
+  ) %>%
+  with_receivers(to_console(), to_json() %>% on_local("app.jsonl"))
+
+# Receiver-level middleware (transforms events per-receiver)
+logger() %>%
+  with_receivers(
+    # Full redaction for console
+    to_console() %>% with_middleware(redact_full),
+
+    # Partial redaction for internal logs
+    to_json() %>% on_local("internal.jsonl") %>% with_middleware(redact_partial),
+
+    # No redaction for secure vault
+    to_json() %>% on_s3(bucket = "vault", key = "full.jsonl")
+  )
+```
+**Key insight:** Same `with_middleware()` function works on loggers AND receivers via S3 dispatch. Logger middleware runs before filtering (can modify levels), receiver middleware runs per-receiver (differential transforms).
 
 ### Error Handling
 

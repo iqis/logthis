@@ -1,5 +1,9 @@
 NULL
 
+# Suppress R CMD check NOTE for variables used in non-standard evaluation contexts
+# receiver_func: Used in mirai closures in as_async() and deferred()
+utils::globalVariables("receiver_func")
+
 # Null-coalescing operator (returns rhs if lhs is NULL)
 `%||%` <- function(lhs, rhs) {
   if (is.null(lhs)) rhs else lhs
@@ -137,7 +141,7 @@ get_shiny_type <- function(level_number, receiver_type = c("shinyalert", "notif"
   receiver_type <- match.arg(receiver_type)
   map <- .SHINY_TYPE_MAP[[receiver_type]]
 
-  idx <- findInterval(level_number, map$levels, rightmost.closed = TRUE)
+  idx <- findInterval(level_number, map$levels, rightmost.closed = FALSE)
   if (idx == 0) idx <- 1
 
   # js_console uses "methods" key, others use "types"

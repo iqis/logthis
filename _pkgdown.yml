@@ -49,9 +49,12 @@ reference:
   desc: Essential functions for creating and configuring loggers
   contents:
   - logger
+  - log_this
+  - void_logger
   - with_receivers
   - with_limits
   - with_tags
+  - with_middleware
   - flush
   - get_receiver
   - buffer_status
@@ -103,17 +106,41 @@ reference:
   contents:
   - to_teams
   - to_syslog
+  - to_email
 
 - title: Testing & Debugging Receivers
   desc: Receivers for testing and development
   contents:
   - to_identity
+  - to_itself
   - to_void
+
+- title: Async & Deferred Logging
+  desc: Asynchronous and deferred logging capabilities
+  contents:
+  - as_async
+  - deferred
+
+- title: Advanced Constructors
+  desc: Low-level constructors for custom receivers and middleware
+  contents:
+  - receiver
+  - middleware
+
+- title: S3 Methods
+  desc: S3 method implementations (generally not called directly)
+  contents:
+  - print.logger
+  - with_limits.logger
+  - with_limits.log_receiver
+  - with_limits.log_formatter
+  - with_middleware.logger
+  - with_middleware.log_receiver
 
 - title: Utilities
   desc: Helper functions and utilities
   contents:
-  - pipe
+  - '`%>%`'
 
 articles:
 - title: Getting Started
