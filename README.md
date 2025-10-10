@@ -26,7 +26,15 @@
 - 🏷️ **Flexible Tagging System** - Track provenance, context, and categorization with hierarchical tags
 
 ### ⭐ Shiny Integration (No Python Equivalent)
-logthis provides **6 Shiny UI receivers** with zero custom JavaScript required:
+
+**The [`logshiny`](logshiny/) companion package** provides complete Shiny logging integration with 7 receivers and a unique inline alert panel system:
+
+**🎯 Inline Alert Panels** (Django/Rails-style):
+- `alert_panel()` + `to_alert_panel()` ⭐ **NEW** - Bootstrap alert panels with auto-dismiss, stacking, and clean state management
+  - Like Django's `messages` or Rails' `flash` - but for Shiny!
+  - Config-driven UI (max alerts, position, auto-dismiss timing)
+  - Full dismissal sync (JS ↔ R) for clean state
+  - Works with any Bootstrap-based Shiny theme
 
 **Modal Alerts:**
 - `to_shinyalert()` - Classic modal alerts (shinyalert package)
@@ -191,11 +199,13 @@ See the [migration guide vignette](vignettes/migration-guide.Rmd) for detailed e
 
 ## Installation
 
+### Core Package
+
 You can install the development version of logthis from [GitHub](https://github.com/) with:
 
 ```r
 # install.packages("devtools")
-devtools::install_github("iqis/logthis")
+devtools::install_github("iqis/logthis", subdir = "logthis")
 ```
 
 Or install from CRAN with:
@@ -204,6 +214,21 @@ Or install from CRAN with:
 # Not yet on CRAN
 # install.packages("logthis")
 ```
+
+### Shiny Integration
+
+For Shiny applications, also install the `logshiny` companion package:
+
+```r
+# install.packages("devtools")
+devtools::install_github("iqis/logthis", subdir = "logshiny")
+```
+
+The `logshiny` package provides:
+- ✨ `alert_panel()` - Inline alert panels (like Django messages)
+- 🚨 Modal alerts (`to_shinyalert()`, `to_sweetalert()`)
+- 🔔 Toast notifications (`to_notif()`, `to_show_toast()`, `to_toastr()`)
+- 🛠️ Browser console logging (`to_js_console()`)
 
 ## Quick Start
 
@@ -968,17 +993,63 @@ process_request <- function(request_id) {
 
 ### Shiny Applications
 
+**Using the new `logshiny::alert_panel()` (recommended):**
+
 ```r
 library(shiny)
 library(logthis)
+library(logshiny)
+
+ui <- fluidPage(
+  titlePanel("My Application"),
+
+  # Add alert panel for inline notifications
+  logshiny::alert_panel(
+    "app_alerts",
+    max_alerts = 5,
+    dismissible = TRUE,
+    auto_dismiss_ms = 5000,
+    position = "top"
+  ),
+
+  textInput("name", "Name"),
+  actionButton("submit", "Submit")
+)
+
+server <- function(input, output, session) {
+  # Setup logging with inline alert panel
+  log_this <- logger() %>%
+    with_receivers(
+      logshiny::to_alert_panel("app_alerts"),   # Inline alerts for users
+      to_console(lower = NOTE)                  # R console for developers
+    )
+
+  observeEvent(input$submit, {
+    if (input$name == "") {
+      log_this(WARNING("Name cannot be empty"))
+    } else if (nchar(input$name) < 3) {
+      log_this(WARNING("Name too short (minimum 3 characters)"))
+    } else {
+      log_this(NOTE(paste("Form submitted for:", input$name)))
+    }
+  })
+}
+```
+
+**Alternative: Using modals and toasts:**
+
+```r
+library(shiny)
+library(logthis)
+library(logshiny)
 
 # Setup logging for Shiny app with multiple UI receivers
 log_this <- logger() %>%
     with_receivers(
-        to_console(lower = NOTE),                   # R console for developers
-        to_js_console(),                            # Browser console for debugging
-        to_shinyalert(lower = ERROR),               # Modal alerts for errors
-        to_show_toast(lower = WARNING, upper = WARNING)  # Toast for warnings
+        to_console(lower = NOTE),                          # R console for developers
+        logshiny::to_js_console(),                         # Browser console for debugging
+        logshiny::to_shinyalert(lower = ERROR),            # Modal alerts for errors
+        logshiny::to_show_toast(lower = WARNING, upper = WARNING)  # Toast for warnings
     )
 
 server <- function(input, output, session) {

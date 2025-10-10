@@ -10,9 +10,9 @@ Author: Siqi Zhang [aut, cre]
 Maintainer: Siqi Zhang <iqis.gnahz@gmail.com>
 Description: A flexible, structured logging framework for R applications.
     Provides hierarchical event levels, multiple output receivers (console, files,
-    Shiny alerts), configurable filtering, and rich metadata support. Designed
-    for R packages, Shiny applications, and data analysis pipelines requiring
-    enterprise-level logging capabilities.
+    cloud storage), configurable filtering, and rich metadata support. Designed
+    for R packages, data analysis pipelines, and enterprise applications requiring
+    robust logging capabilities. For Shiny integration, see the 'logshiny' package.
 License: MIT + file LICENSE
 URL: https://iqis.github.io/logthis/, https://github.com/iqis/logthis
 BugReports: https://github.com/iqis/logthis/issues
@@ -24,11 +24,6 @@ Suggests:
     pkgdown,
     knitr,
     rmarkdown,
-    shinyalert,
-    shiny,
-    shinyjs,
-    shinyWidgets,
-    shinytoastr,
     jsonlite,
     httr,
     httr2,

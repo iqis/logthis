@@ -1,15 +1,16 @@
 # Workflow derived from https://github.com/r-lib/actions/tree/v2/examples
 # Need help debugging build failures? Start at https://github.com/r-lib/actions#where-to-find-help
 on:
-  push:
-    branches: [main, master]
-  pull_request:
-    branches: [main, master]
+  workflow_dispatch:
+  # push:
+  #   branches: [main, master]
+  # pull_request:
+  #   branches: [main, master]
 
 name: test-coverage
 
 jobs:
-  test-coverage:
+  test-coverage-logthis:
     runs-on: ubuntu-latest
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
@@ -25,8 +26,9 @@ jobs:
         with:
           extra-packages: any::covr
           needs: coverage
+          working-directory: logthis
 
-      - name: Test coverage
+      - name: Test coverage for logthis
         run: |
           covr::codecov(
             quiet = FALSE,
@@ -34,6 +36,7 @@ jobs:
             install_path = file.path(normalizePath(Sys.getenv("RUNNER_TEMP"), winslash = "/"), "package")
           )
         shell: Rscript {0}
+        working-directory: logthis
 
       - name: Show testthat output
         if: always()
@@ -46,5 +49,5 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-test-failures
+          name: coverage-test-failures-logthis
           path: ${{ runner.temp }}/package

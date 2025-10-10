@@ -1,8 +1,7 @@
 # ==============================================================================
-# Receiver Shiny UI
+# Shiny Receivers
 # ==============================================================================
-# Shiny UI receivers for displaying log events in Shiny applications.
-# Includes shinyalert, notifications, sweetalert, toasts, and browser console.
+# Receivers for displaying log events in Shiny applications.
 
 #' Shiny alert receiver
 #'
@@ -15,17 +14,17 @@
 #'
 #' @return log receiver function; <log_receiver>
 #' @export
-#' @family receivers
+#' @family shiny_receivers
 #'
-#' @seealso [to_sweetalert()], [to_notif()], [to_show_toast()], [to_toastr()], [to_js_console()] for other Shiny receivers
+#' @seealso [to_alert_panel()], [to_sweetalert()], [to_notif()], [to_show_toast()], [to_toastr()], [to_js_console()] for other Shiny receivers
 #'
 #' @examples
 #' \dontrun{
 #' # Requires shinyalert package and active Shiny session
 #' alert_recv <- to_shinyalert()
 #' }
-to_shinyalert <- function(lower = WARNING, upper = HIGHEST, ...){
-  receiver(
+to_shinyalert <- function(lower = logthis::WARNING(), upper = logthis::HIGHEST(), ...){
+  logthis::receiver(
     function(event){
       `if`(!inherits(event, "log_event"),
            stop("`event` must be of class `log_event`"))
@@ -56,14 +55,14 @@ to_shinyalert <- function(lower = WARNING, upper = HIGHEST, ...){
 #' to be installed and a Shiny session to be active.
 #'
 #' @param lower minimum level to display (inclusive, optional); <log_event_level>
-#' @param upper maximum level to display (inclusive, optional); <log_event_level>  
+#' @param upper maximum level to display (inclusive, optional); <log_event_level>
 #' @param ... additional arguments passed to shiny::showNotification
 #'
 #' @return log receiver function; <log_receiver>
 #' @export
-#' @family receivers
+#' @family shiny_receivers
 #'
-#' @seealso [to_shinyalert()], [to_sweetalert()], [to_show_toast()], [to_toastr()], [to_js_console()] for other Shiny receivers
+#' @seealso [to_alert_panel()], [to_shinyalert()], [to_sweetalert()], [to_show_toast()], [to_toastr()], [to_js_console()] for other Shiny receivers
 #'
 #' @examples
 #' \dontrun{
@@ -72,8 +71,8 @@ to_shinyalert <- function(lower = WARNING, upper = HIGHEST, ...){
 #'   notif_recv <- to_notif()
 #' }
 #' }
-to_notif <- function(lower = NOTE, upper = WARNING, ...){
-  receiver(
+to_notif <- function(lower = logthis::NOTE(), upper = logthis::WARNING(), ...){
+  logthis::receiver(
     function(event){
       `if`(!inherits(event, "log_event"),
            stop("`event` must be of class `log_event`"))
@@ -110,17 +109,17 @@ to_notif <- function(lower = NOTE, upper = WARNING, ...){
 #'
 #' @return log receiver function; <log_receiver>
 #' @export
-#' @family receivers
+#' @family shiny_receivers
 #'
-#' @seealso [to_shinyalert()], [to_notif()], [to_show_toast()], [to_toastr()], [to_js_console()] for other Shiny receivers
+#' @seealso [to_alert_panel()], [to_shinyalert()], [to_notif()], [to_show_toast()], [to_toastr()], [to_js_console()] for other Shiny receivers
 #'
 #' @examples
 #' \dontrun{
 #' # Requires shinyWidgets package and active Shiny session
 #' sweet_recv <- to_sweetalert()
 #' }
-to_sweetalert <- function(lower = WARNING, upper = HIGHEST, ...){
-  receiver(
+to_sweetalert <- function(lower = logthis::WARNING(), upper = logthis::HIGHEST(), ...){
+  logthis::receiver(
     function(event){
       `if`(!inherits(event, "log_event"),
            stop("`event` must be of class `log_event`"))
@@ -160,17 +159,17 @@ to_sweetalert <- function(lower = WARNING, upper = HIGHEST, ...){
 #'
 #' @return log receiver function; <log_receiver>
 #' @export
-#' @family receivers
+#' @family shiny_receivers
 #'
-#' @seealso [to_shinyalert()], [to_sweetalert()], [to_notif()], [to_toastr()], [to_js_console()] for other Shiny receivers
+#' @seealso [to_alert_panel()], [to_shinyalert()], [to_sweetalert()], [to_notif()], [to_toastr()], [to_js_console()] for other Shiny receivers
 #'
 #' @examples
 #' \dontrun{
 #' # Requires shinyWidgets package and active Shiny session
 #' toast_recv <- to_show_toast()
 #' }
-to_show_toast <- function(lower = NOTE, upper = WARNING, ...){
-  receiver(
+to_show_toast <- function(lower = logthis::NOTE(), upper = logthis::WARNING(), ...){
+  logthis::receiver(
     function(event){
       `if`(!inherits(event, "log_event"),
            stop("`event` must be of class `log_event`"))
@@ -210,9 +209,9 @@ to_show_toast <- function(lower = NOTE, upper = WARNING, ...){
 #'
 #' @return log receiver function; <log_receiver>
 #' @export
-#' @family receivers
+#' @family shiny_receivers
 #'
-#' @seealso [to_shinyalert()], [to_sweetalert()], [to_notif()], [to_show_toast()], [to_js_console()] for other Shiny receivers
+#' @seealso [to_alert_panel()], [to_shinyalert()], [to_sweetalert()], [to_notif()], [to_show_toast()], [to_js_console()] for other Shiny receivers
 #'
 #' @examples
 #' \dontrun{
@@ -220,8 +219,8 @@ to_show_toast <- function(lower = NOTE, upper = WARNING, ...){
 #' # In UI: shinytoastr::useToastr()
 #' toastr_recv <- to_toastr()
 #' }
-to_toastr <- function(lower = NOTE, upper = WARNING, ...){
-  receiver(
+to_toastr <- function(lower = logthis::NOTE(), upper = logthis::WARNING(), ...){
+  logthis::receiver(
     function(event){
       `if`(!inherits(event, "log_event"),
            stop("`event` must be of class `log_event`"))
@@ -267,9 +266,9 @@ to_toastr <- function(lower = NOTE, upper = WARNING, ...){
 #'
 #' @return log receiver function; <log_receiver>
 #' @export
-#' @family receivers
+#' @family shiny_receivers
 #'
-#' @seealso [to_shinyalert()], [to_sweetalert()], [to_notif()], [to_show_toast()], [to_toastr()] for other Shiny receivers, [to_console()] for R console output
+#' @seealso [to_alert_panel()], [to_shinyalert()], [to_sweetalert()], [to_notif()], [to_show_toast()], [to_toastr()] for other Shiny receivers
 #'
 #' @examples
 #' \dontrun{
@@ -280,12 +279,12 @@ to_toastr <- function(lower = NOTE, upper = WARNING, ...){
 #' # Use in logger for simultaneous R console and browser console output
 #' log_this <- logger() %>%
 #'   with_receivers(
-#'     to_console(),      # R console
-#'     to_js_console()    # Browser console
+#'     logthis::to_console(),      # R console
+#'     to_js_console()             # Browser console
 #'   )
 #' }
-to_js_console <- function(lower = LOWEST, upper = HIGHEST){
-  receiver(
+to_js_console <- function(lower = logthis::LOWEST(), upper = logthis::HIGHEST()){
+  logthis::receiver(
     function(event){
       `if`(!inherits(event, "log_event"),
            stop("`event` must be of class `log_event`"))
@@ -324,4 +323,3 @@ to_js_console <- function(lower = LOWEST, upper = HIGHEST){
       invisible(NULL)
     })
 }
-

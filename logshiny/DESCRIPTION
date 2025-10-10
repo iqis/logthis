@@ -1,0 +1,33 @@
+Package: logshiny
+Type: Package
+Title: Shiny Integration for logthis
+Version: 0.1.0
+Authors@R: c(
+    person("Your", "Name", email = "your.email@example.com", role = c("aut", "cre"))
+    )
+Description: Provides Shiny-specific receivers and UI components for the logthis
+    logging framework. Includes inline alert panels, modal alerts, and toast
+    notifications for displaying log events in Shiny applications.
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.2
+Imports:
+    logthis,
+    shiny,
+    htmltools,
+    jsonlite
+Suggests:
+    testthat (>= 3.0.0),
+    knitr,
+    rmarkdown,
+    shinytest2,
+    shinyalert,
+    shinyWidgets,
+    shinytoastr,
+    shinyjs
+VignetteBuilder: knitr
+URL: https://github.com/iqis/logthis
+BugReports: https://github.com/iqis/logthis/issues
+Config/testthat/edition: 3

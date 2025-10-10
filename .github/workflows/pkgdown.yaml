@@ -34,16 +34,18 @@ jobs:
         with:
           extra-packages: any::pkgdown, local::.
           needs: website
+          working-directory: logthis
 
-      - name: Build site
+      - name: Build logthis site
         run: pkgdown::build_site_github_pages(new_process = FALSE, install = TRUE)
         shell: Rscript {0}
+        working-directory: logthis
 
       - name: Upload artifact
         if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v3
         with:
-          path: docs
+          path: logthis/docs
 
   deploy:
     if: github.event_name != 'pull_request'
