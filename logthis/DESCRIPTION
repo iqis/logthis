@@ -11,8 +11,10 @@ Maintainer: Siqi Zhang <iqis.gnahz@gmail.com>
 Description: A flexible, structured logging framework for R applications.
     Provides hierarchical event levels, multiple output receivers (console, files,
     cloud storage), configurable filtering, and rich metadata support. Designed
-    for R packages, data analysis pipelines, and enterprise applications requiring
-    robust logging capabilities. For Shiny integration, see the 'logshiny' package.
+    for R packages, data analysis pipelines, Shiny applications, and pharmaceutical
+    GxP compliance (21 CFR Part 11, ALCOA+). Integrates with validation frameworks
+    (validate, pointblank, arsenal) for complete audit trails. For Shiny integration,
+    see the 'logshiny' package.
 License: MIT + file LICENSE
 URL: https://iqis.github.io/logthis/, https://github.com/iqis/logthis
 BugReports: https://github.com/iqis/logthis/issues
@@ -32,7 +34,15 @@ Suggests:
     AzureStor,
     blastula,
     mirai,
-    bench
+    bench,
+    validate,
+    pointblank,
+    arsenal,
+    digest,
+    tidylog,
+    dplyr,
+    tidyr,
+    rlang
 Imports:
     magrittr,
     glue
