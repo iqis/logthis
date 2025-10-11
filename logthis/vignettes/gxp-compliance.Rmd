@@ -1,0 +1,780 @@
+---
+title: "GxP Compliance and Pharmaceutical Logging"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{GxP Compliance and Pharmaceutical Logging}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(logthis)
+```
+
+This vignette demonstrates logging patterns for **pharmaceutical, clinical, and regulated environments** requiring GxP compliance (21 CFR Part 11, ALCOA+, EU GMP Annex 11).
+
+---
+
+## Overview: GxP Logging Requirements
+
+GxP-compliant logging must meet these regulatory requirements:
+
+**21 CFR Part 11 (FDA Electronic Records)**
+- Complete audit trail (who, what, when, why)
+- Immutable storage (WORM - Write Once Read Many)
+- Secure storage with access controls
+- Traceable to source data
+- Electronic signatures with meaning
+
+**ALCOA+ Principles**
+- **A**ttributable - Who performed the action
+- **L**egible - Human-readable audit trail
+- **C**ontemporaneous - Logged in real-time
+- **O**riginal - Complete, unedited records
+- **A**ccurate - Correct and validated
+- **+C**omplete - All data, no gaps
+- **+C**onsistent - Same format throughout
+- **+E**nduring - Long-term storage
+- **+A**vailable - Accessible for inspection
+
+---
+
+## Pattern 1: Basic GxP Logger
+
+Create a logger for pharmaceutical workflows with appropriate tags and audit trail.
+
+```{r eval=FALSE}
+setup_gxp_logger <- function(study_id, system_name, audit_path) {
+  log_this <- logger() %>%
+    with_tags(
+      study_id = study_id,
+      system = system_name,
+      regulation = "21CFR11"
+    ) %>%
+    with_receivers(
+      to_json() %>% on_local(path = audit_path),
+      to_console()
+    )
+
+  # Log initialization
+  log_this(NOTE("GxP logger initialized",
+                study_id = study_id,
+                system = system_name,
+                audit_path = audit_path,
+                operator = Sys.getenv("USER"),
+                timestamp = Sys.time()))
+
+  log_this
+}
+
+# Use in validation workflow
+validate_clinical_data <- function(data, study_id) {
+  log_this <- setup_gxp_logger(
+    study_id = study_id,
+    system_name = "Clinical Data Validation",
+    audit_path = paste0("audit/", study_id, "_validation.jsonl")
+  )
+
+  log_this(NOTE("Validation started",
+                n_records = nrow(data),
+                analyst = Sys.getenv("USER")))
+
+  # Validation logic...
+
+  log_this(NOTE("Validation complete",
+                passed_checks = 15,
+                failed_checks = 0))
+}
+```
+
+---
+
+## Pattern 2: Production GxP with WORM Storage
+
+Use immutable cloud storage for production audit trails.
+
+```{r eval=FALSE}
+production_gxp_logger <- function(study_id, system_name) {
+  logger() %>%
+    with_tags(
+      study_id = study_id,
+      system = system_name,
+      regulation = "21CFR11",
+      environment = "production"
+    ) %>%
+    with_receivers(
+      # Primary: WORM storage (S3 with versioning + object lock)
+      to_json() %>%
+        on_s3(bucket = "gxp-audit-trail",
+              key = paste0(study_id, "/", Sys.Date(), ".jsonl"),
+              region = "us-east-1"),
+
+      # Backup: Local redundant copy
+      to_json() %>%
+        on_local(path = paste0("audit_backup/", study_id, ".jsonl")),
+
+      # Alerts: Console for critical events only
+      to_console(lower = ERROR)
+    )
+}
+
+# Use in production analysis
+analyze_study_data <- function(data, study_id) {
+  log_this <- production_gxp_logger(study_id, "Statistical Analysis")
+
+  log_this(NOTE("Analysis initiated",
+                study_id = study_id,
+                analyst = Sys.getenv("USER"),
+                sop_version = "SOP-STAT-001-v3.2",
+                data_lock_date = "2025-01-15"))
+
+  # Analysis steps...
+
+  log_this(NOTE("Analysis complete",
+                n_subjects = nrow(data),
+                analysis_plan_id = "SAP-001"))
+}
+```
+
+---
+
+## Pattern 3: Multi-Environment GxP
+
+Different logging configurations for development, validation, and production.
+
+```{r eval=FALSE}
+gxp_by_environment <- function(study_id, env = Sys.getenv("ENV", "dev")) {
+  log_this <- logger() %>%
+    with_tags(study_id = study_id, environment = env)
+
+  if (env == "development") {
+    # Development: Verbose console logging
+    log_this <- log_this %>%
+      with_receivers(to_console(lower = DEBUG))
+
+  } else if (env == "validation") {
+    # Validation: Full audit trail for IQ/OQ/PQ
+    log_this <- log_this %>%
+      with_receivers(
+        to_json() %>%
+          on_s3(bucket = "validation-logs",
+                key = paste0(study_id, "/validation.jsonl")),
+        to_console(lower = NOTE)
+      ) %>%
+      with_limits(lower = DEBUG)  # Capture everything
+
+  } else if (env == "production") {
+    # Production: WORM storage + alerts for errors
+    log_this <- log_this %>%
+      with_receivers(
+        to_json() %>%
+          on_s3(bucket = "gxp-prod-audit",
+                key = paste0(study_id, "/", Sys.Date(), ".jsonl")),
+        to_email(
+          to = "quality@pharma.com",
+          subject = paste("GxP Alert:", study_id),
+          lower = ERROR
+        )
+      ) %>%
+      with_limits(lower = NOTE)
+  }
+
+  log_this
+}
+
+# Use in analysis pipeline
+run_statistical_analysis <- function(data, study_id) {
+  log_this <- gxp_by_environment(study_id) %>%
+    with_tags(component = "statistical_analysis")
+
+  log_this(NOTE("Analysis started",
+                analyst = Sys.getenv("USER"),
+                n_subjects = nrow(data),
+                timestamp = Sys.time()))
+
+  # Use with validation helpers
+  validate_with_audit(data, rules, log_this,
+                      user_id = Sys.getenv("USER"),
+                      reason = "Statistical analysis for database lock")
+
+  # Analysis steps...
+
+  log_this(NOTE("Analysis complete",
+                duration_sec = duration))
+}
+```
+
+---
+
+## Pattern 4: Electronic Signatures
+
+Log electronic signatures with complete audit trail.
+
+```{r eval=FALSE}
+esign_logger <- function(study_id, document_id) {
+  logger() %>%
+    with_tags(
+      study_id = study_id,
+      document_id = document_id,
+      regulation = "21CFR11_esign"
+    ) %>%
+    with_receivers(
+      # Immutable audit trail
+      to_json() %>%
+        on_s3(bucket = "esign-audit",
+              key = paste0(study_id, "/", document_id, ".jsonl")),
+
+      # Real-time monitoring
+      to_webhook(url = "https://monitoring.pharma.com/esign")
+    )
+}
+
+# E-signature workflow
+apply_esignature <- function(document_id, study_id, username, password) {
+  log_this <- esign_logger(study_id, document_id)
+
+  # Validate credentials
+  if (!validate_credentials(username, password)) {
+    log_this(ERROR("E-signature failed: Invalid credentials",
+                   username = username,
+                   document_id = document_id,
+                   ip_address = get_client_ip(),
+                   timestamp = Sys.time()))
+    stop("Invalid credentials")
+  }
+
+  # Apply signature
+  log_this(NOTE("E-signature applied",
+                username = username,
+                document_id = document_id,
+                timestamp = Sys.time(),
+                meaning = "I have reviewed and approved this document per SOP-QA-005",
+                ip_address = get_client_ip(),
+                workstation_id = Sys.info()["nodename"]))
+
+  # Lock document
+  lock_document(document_id)
+
+  log_this(NOTE("Document locked",
+                document_id = document_id,
+                locked_by = username,
+                lock_timestamp = Sys.time()))
+}
+```
+
+---
+
+## Pattern 5: Clinical Trial Data Access
+
+Log all access to clinical trial data for audit trail.
+
+```{r eval=FALSE}
+setup_clinical_access_logger <- function(study_id) {
+  logger() %>%
+    with_tags(
+      study_id = study_id,
+      regulation = "ICH-GCP",
+      data_type = "clinical_trial"
+    ) %>%
+    with_receivers(
+      to_json() %>%
+        on_s3(bucket = "clinical-access-logs",
+              key = paste0(study_id, "/access_", Sys.Date(), ".jsonl"))
+    )
+}
+
+# Wrap data access with logging
+access_clinical_data <- function(study_id, dataset_name, user_id, reason) {
+  log_this <- setup_clinical_access_logger(study_id)
+
+  log_this(NOTE("Data access requested",
+                user_id = user_id,
+                dataset_name = dataset_name,
+                reason = reason,
+                timestamp = Sys.time(),
+                ip_address = get_client_ip()))
+
+  # Check permissions
+  if (!has_access(user_id, dataset_name)) {
+    log_this(WARNING("Access denied",
+                     user_id = user_id,
+                     dataset_name = dataset_name,
+                     reason = "Insufficient permissions"))
+    stop("Access denied")
+  }
+
+  # Load data
+  data <- load_dataset(study_id, dataset_name)
+
+  log_this(NOTE("Data accessed",
+                user_id = user_id,
+                dataset_name = dataset_name,
+                n_records = nrow(data),
+                n_columns = ncol(data),
+                data_hash = digest::digest(data)))
+
+  data
+}
+```
+
+---
+
+## Pattern 6: Manufacturing Batch Records (GMP)
+
+Log pharmaceutical manufacturing processes for GMP compliance.
+
+```{r eval=FALSE}
+gmp_batch_logger <- function(batch_id, product_code) {
+  logger() %>%
+    with_tags(
+      batch_id = batch_id,
+      product_code = product_code,
+      regulation = "EU_GMP_Annex11",
+      process_type = "manufacturing"
+    ) %>%
+    with_receivers(
+      # Primary audit trail
+      to_json() %>%
+        on_local(path = paste0("batch_records/", batch_id, ".jsonl")),
+
+      # Cloud backup
+      to_json() %>%
+        on_s3(bucket = "gmp-batch-records",
+              key = paste0(product_code, "/", batch_id, ".jsonl")),
+
+      # Alerts for deviations
+      to_email(
+        to = "qa@pharma.com",
+        subject = paste("GMP Deviation Alert - Batch", batch_id),
+        lower = WARNING
+      )
+    )
+}
+
+# Manufacturing process with logging
+manufacture_batch <- function(batch_id, product_code) {
+  log_this <- gmp_batch_logger(batch_id, product_code)
+
+  log_this(NOTE("Batch manufacturing started",
+                batch_id = batch_id,
+                operator = Sys.getenv("USER"),
+                start_time = Sys.time(),
+                sop_version = "MFG-001-v2.3"))
+
+  # Process step 1: Weighing
+  log_this(NOTE("Weighing complete",
+                ingredient = "API",
+                target_weight_kg = 50.0,
+                actual_weight_kg = 50.1,
+                tolerance_met = TRUE))
+
+  # Process step 2: Mixing
+  log_this(NOTE("Mixing complete",
+                duration_min = 30,
+                temperature_c = 25.2,
+                rpm = 100))
+
+  # Quality check
+  if (quality_check_failed) {
+    log_this(WARNING("Quality check failed",
+                     parameter = "viscosity",
+                     expected = "1000-1200 cP",
+                     actual = "1250 cP",
+                     deviation_logged = TRUE))
+  }
+
+  log_this(NOTE("Batch manufacturing complete",
+                batch_id = batch_id,
+                end_time = Sys.time(),
+                yield_percent = 98.5,
+                qc_approved = TRUE))
+}
+```
+
+---
+
+## Pattern 7: Pharmacovigilance Adverse Events
+
+Log adverse event reports for regulatory submission.
+
+```{r eval=FALSE}
+pv_logger <- function(study_id, ae_report_id) {
+  logger() %>%
+    with_tags(
+      study_id = study_id,
+      ae_report_id = ae_report_id,
+      regulation = "ICH-E2B",
+      report_type = "adverse_event"
+    ) %>%
+    with_receivers(
+      # Regulatory submission trail
+      to_json() %>%
+        on_s3(bucket = "pv-reports",
+              key = paste0(study_id, "/AE/", ae_report_id, ".jsonl")),
+
+      # Immediate alerts for serious AEs
+      to_email(
+        to = "safety@pharma.com",
+        subject = paste("AE Report:", ae_report_id),
+        lower = ERROR  # Serious AEs logged as ERROR
+      )
+    )
+}
+
+# Log adverse event
+report_adverse_event <- function(study_id, subject_id, event_description,
+                                 severity, causality) {
+  ae_report_id <- generate_ae_id()
+  log_this <- pv_logger(study_id, ae_report_id)
+
+  # Determine level based on severity
+  level <- if (severity %in% c("Serious", "Life-threatening")) ERROR else WARNING
+
+  log_this(level(event_description,
+                 ae_report_id = ae_report_id,
+                 subject_id = subject_id,
+                 severity = severity,
+                 causality = causality,
+                 reporter = Sys.getenv("USER"),
+                 report_date = Sys.Date(),
+                 onset_date = onset_date,
+                 outcome = outcome,
+                 regulatory_deadline = Sys.Date() + 15))  # 15-day reporting
+
+  ae_report_id
+}
+```
+
+---
+
+## Pattern 8: Pipeline Audit Trails with Tidylog
+
+Automatically log all data transformations using tidylog for complete pipeline audit trails.
+
+```{r eval=FALSE}
+library(dplyr)
+library(tidylog)
+
+# Pattern: GxP pipeline logger with tidylog
+setup_gxp_pipeline_logger <- function(study_id, pipeline_name, audit_path) {
+  log_this <- logger() %>%
+    with_tags(
+      study_id = study_id,
+      pipeline_name = pipeline_name,
+      regulation = "21CFR11",
+      logging_type = "pipeline"
+    ) %>%
+    with_receivers(
+      # Primary audit trail
+      to_json() %>% on_local(path = audit_path),
+
+      # Cloud backup
+      to_json() %>%
+        on_s3(bucket = "gxp-pipeline-audit",
+              key = paste0(study_id, "/", pipeline_name, ".jsonl")),
+
+      # Console for development
+      to_console(lower = NOTE)
+    )
+
+  # Enable tidylog integration
+  log_tidyverse(logger = log_this, pipeline_id = pipeline_name)
+
+  # Log initialization
+  log_this(NOTE("GxP pipeline logger initialized",
+                study_id = study_id,
+                pipeline_name = pipeline_name,
+                audit_path = audit_path,
+                tidylog_enabled = TRUE,
+                operator = Sys.getenv("USER"),
+                sop_version = "SOP-PIPE-001-v1.0"))
+
+  log_this
+}
+
+# Use in SDTM derivation
+derive_sdtm_dm <- function(raw_data, study_id) {
+  log_this <- setup_gxp_pipeline_logger(
+    study_id = study_id,
+    pipeline_name = "sdtm_dm_derivation",
+    audit_path = paste0("audit/", study_id, "_dm_pipeline.jsonl")
+  )
+
+  log_this(NOTE("SDTM DM derivation started",
+                input_records = nrow(raw_data),
+                input_hash = digest::digest(raw_data),
+                derivation_date = Sys.Date()))
+
+  # All dplyr operations are automatically logged via tidylog
+  dm <- raw_data %>%
+    # tidylog logs: "filter: removed X rows (Y%), X rows remaining"
+    filter(!is.na(USUBJID)) %>%
+
+    # tidylog logs: "mutate: converted X values"
+    mutate(
+      AGE = as.numeric(AGE),
+      AGEU = "YEARS",
+      RFSTDTC = as.character(RFSTDTC)
+    ) %>%
+
+    # tidylog logs: "select: dropped X variables (Y, Z, ...)"
+    select(STUDYID, DOMAIN, USUBJID, AGE, AGEU, SEX, RACE, ETHNIC, RFSTDTC) %>%
+
+    # tidylog logs: "arrange: reordered X rows"
+    arrange(USUBJID)
+
+  # Final validation
+  log_this(NOTE("SDTM DM derivation complete",
+                output_records = nrow(dm),
+                output_hash = digest::digest(dm),
+                variables_derived = ncol(dm),
+                data_integrity_check = "PASS"))
+
+  dm
+}
+
+# Advanced: Track transformations with input/output hashes
+derive_with_full_audit <- function(raw_data, study_id) {
+  log_this <- setup_gxp_pipeline_logger(
+    study_id = study_id,
+    pipeline_name = "full_audit_pipeline",
+    audit_path = paste0("audit/", study_id, "_full_audit.jsonl")
+  )
+
+  # Use track_transformation for complete audit
+  dm <- raw_data %>%
+    track_transformation(
+      log_this,
+      operation = "sdtm_dm_derivation",
+      metadata = list(
+        sop_version = "SOP-SDTM-001-v2.1",
+        programmer = Sys.getenv("USER"),
+        validation_status = "pending"
+      )
+    ) %>%
+    filter(!is.na(USUBJID)) %>%
+    mutate(AGE = as.numeric(AGE)) %>%
+    select(STUDYID, DOMAIN, USUBJID, AGE, SEX)
+
+  # track_transformation automatically logs:
+  # - Input data hash
+  # - Output data hash
+  # - Row count changes
+  # - Column changes
+  # - All tidylog messages
+
+  dm
+}
+```
+
+**When to use**: SDTM/ADaM derivations, clinical data pipelines, any dplyr transformations requiring audit trail.
+
+**Benefits:**
+- Automatic logging of all transformations
+- Complete record of data lineage
+- No manual logging code in pipelines
+- Captures row/column counts, filtering details
+- Input/output hashes for data integrity
+
+---
+
+## Pattern 9: Computer System Validation (CSV)
+
+Log validation activities for computer system validation.
+
+```{r eval=FALSE}
+csv_logger <- function(system_id, validation_phase) {
+  logger() %>%
+    with_tags(
+      system_id = system_id,
+      validation_phase = validation_phase,  # IQ, OQ, PQ
+      regulation = "GAMP5"
+    ) %>%
+    with_receivers(
+      to_json() %>%
+        on_local(path = paste0("csv/", system_id, "_", validation_phase, ".jsonl"))
+    )
+}
+
+# Installation Qualification (IQ)
+perform_iq <- function(system_id) {
+  log_this <- csv_logger(system_id, "IQ")
+
+  log_this(NOTE("IQ started",
+                system_id = system_id,
+                validator = Sys.getenv("USER"),
+                protocol_id = "IQ-PROTO-001"))
+
+  # IQ checks
+  log_this(NOTE("Hardware verification",
+                cpu = "Intel Xeon",
+                ram_gb = 32,
+                disk_gb = 500,
+                status = "PASS"))
+
+  log_this(NOTE("Software installation",
+                r_version = R.version.string,
+                packages_installed = 150,
+                status = "PASS"))
+
+  log_this(NOTE("IQ complete",
+                overall_status = "PASS",
+                approved_by = "QA Manager",
+                approval_date = Sys.Date()))
+}
+
+# Operational Qualification (OQ)
+perform_oq <- function(system_id) {
+  log_this <- csv_logger(system_id, "OQ")
+
+  log_this(NOTE("OQ started",
+                system_id = system_id,
+                protocol_id = "OQ-PROTO-001"))
+
+  # OQ tests
+  log_this(NOTE("Calculation accuracy test",
+                test_id = "OQ-001",
+                expected = 42.5,
+                actual = 42.5,
+                status = "PASS"))
+
+  log_this(NOTE("OQ complete",
+                tests_passed = 25,
+                tests_failed = 0,
+                overall_status = "PASS"))
+}
+```
+
+---
+
+## Best Practices for GxP Logging
+
+### 1. Always Log These Fields
+
+```{r eval=FALSE}
+log_this(NOTE("Action performed",
+              # Who
+              user_id = Sys.getenv("USER"),
+              user_role = "Data Manager",
+
+              # What
+              action = "data_modification",
+              table_name = "dm",
+              record_id = "SUBJ-001",
+
+              # When
+              timestamp = Sys.time(),
+
+              # Why
+              reason = "Protocol amendment 03",
+
+              # Where
+              system = "Clinical Data Management System",
+              workstation_id = Sys.info()["nodename"],
+
+              # How
+              sop_version = "SOP-DM-001-v2.1",
+              software_version = packageVersion("mypackage")))
+```
+
+### 2. Never Sample or Drop Audit Events
+
+```{r eval=FALSE}
+# BAD: Sampling drops events
+log_this <- logger() %>%
+  with_middleware(sample_by_level) %>%  # DON'T DO THIS for GxP!
+  with_receivers(to_json() %>% on_local("audit.jsonl"))
+
+# GOOD: All events logged
+log_this <- logger() %>%
+  with_receivers(
+    # Full audit trail (all events)
+    to_json() %>% on_s3(bucket = "gxp-audit", key = "full.jsonl"),
+
+    # Sample for console only (not audit trail)
+    to_console() %>% with_middleware(sample_by_level)
+  )
+```
+
+### 3. Use Immutable Storage
+
+```{r eval=FALSE}
+# Enable S3 versioning + object lock for WORM compliance
+to_json() %>%
+  on_s3(bucket = "gxp-audit-worm",  # Bucket has object lock enabled
+        key = paste0(study_id, "/", Sys.Date(), ".jsonl"),
+        versioning = TRUE,
+        object_lock = "GOVERNANCE")  # Prevents deletion
+```
+
+### 4. Include Data Integrity Checks
+
+```{r eval=FALSE}
+# Log data hashes for integrity verification
+validate_data <- function(data, study_id) {
+  log_this <- gxp_logger(study_id)
+
+  data_hash <- digest::digest(data)
+
+  log_this(NOTE("Data validation started",
+                n_records = nrow(data),
+                data_hash = data_hash))
+
+  # Validation logic...
+
+  log_this(NOTE("Data validation complete",
+                data_hash_verified = identical(data_hash, digest::digest(data))))
+}
+```
+
+### 5. Implement Role-Based Access
+
+```{r eval=FALSE}
+check_gxp_access <- function(user_id, operation) {
+  if (!has_gxp_role(user_id, operation)) {
+    log_this(ERROR("Unauthorized GxP operation",
+                   user_id = user_id,
+                   operation = operation,
+                   timestamp = Sys.time()))
+    stop("Access denied: Insufficient GxP permissions")
+  }
+}
+```
+
+---
+
+## Regulatory Compliance Checklist
+
+**21 CFR Part 11 Requirements:**
+- ✅ Audit trail captures user identity (`user_id`)
+- ✅ Timestamps for all actions (`Sys.time()`)
+- ✅ Reason for change documented (`reason` field)
+- ✅ Immutable storage (S3 object lock)
+- ✅ Electronic signatures logged with meaning
+- ✅ Access controls enforced
+
+**ALCOA+ Principles:**
+- ✅ **Attributable**: User IDs in all events
+- ✅ **Legible**: JSON format, human-readable
+- ✅ **Contemporaneous**: Real-time logging
+- ✅ **Original**: Immutable WORM storage
+- ✅ **Accurate**: Data hashes for verification
+- ✅ **Complete**: No sampling/dropping of audit events
+- ✅ **Consistent**: Standard JSON schema
+- ✅ **Enduring**: Cloud storage with retention policies
+- ✅ **Available**: Queryable with `filter_by_tags()`
+
+---
+
+## See Also
+
+- [Patterns Vignette](patterns.html) - General logging patterns
+- [Validation Helpers](../reference/validate_with_audit.html) - Audit trail for validation
+- [Python Comparison](python-comparison.html) - GxP patterns in Python vs R

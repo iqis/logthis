@@ -117,6 +117,175 @@ print(result$tags)
 # Output: "authentication" "user-service" "production" "user:alice" "ip:192.168.1.100"
 ```
 
+---
+
+# Field Merging and Precedence
+
+## Understanding Tags vs Custom Fields
+
+**Logger Tags** (via `with_tags()`):
+- Stored in special `tags` field
+- Applied to ALL events from that logger
+- Used for categorization and filtering
+
+**Event Custom Fields** (in event constructors):
+- Stored as individual fields in the event
+- Applied to specific events only
+- Can be any data type
+
+```{r eval=FALSE}
+# Logger tags
+log_this <- logger() %>%
+  with_tags(environment = "production", service = "api")
+
+# Event custom fields
+log_this(NOTE("Request received",
+              user_id = "alice",          # Custom field
+              response_time_ms = 150))    # Custom field
+
+# JSON output:
+# {
+#   "tags": ["environment:production", "service:api"],  # Logger tags
+#   "user_id": "alice",                                 # Custom field
+#   "response_time_ms": 150                             # Custom field
+# }
+```
+
+## Formatter Behavior
+
+### to_json() - Includes Everything Automatically
+
+JSON formatter automatically includes ALL custom fields:
+
+```{r eval=FALSE}
+log_this <- logger() %>%
+  with_receivers(to_json() %>% on_local("app.jsonl"))
+
+log_this(NOTE("Event", custom_field_1 = "value1", custom_field_2 = "value2"))
+
+# Output in app.jsonl:
+# {"time":"...","level":"NOTE","message":"Event","custom_field_1":"value1","custom_field_2":"value2"}
+```
+
+### to_text() - Only Includes Template Variables ⚠️
+
+**IMPORTANT**: Text formatter ONLY includes fields explicitly mentioned in template!
+
+```{r eval=FALSE}
+# Default template - custom fields are LOST!
+log_this <- logger() %>%
+  with_receivers(to_text())  # Default: "{time} [{level}:{level_number}] {message}"
+
+log_this(NOTE("Event", user_id = "alice", component = "database"))
+# Output: "2025-10-11 10:23:45 [NOTE:30] Event"
+# ⚠️ user_id and component are NOT in output!
+
+# SOLUTION: Include custom fields in template
+log_this <- logger() %>%
+  with_receivers(
+    to_text("{time} [{level}] {message} | user={user_id} component={component}")
+  )
+
+log_this(NOTE("Event", user_id = "alice", component = "database"))
+# Output: "2025-10-11 10:23:45 [NOTE] Event | user=alice component=database"
+```
+
+## Name Collision Behavior
+
+### Logger Tags + Event Custom Fields with Same Name
+
+When logger tags and event custom fields have the same name, **both are preserved** as separate fields:
+
+```{r eval=FALSE}
+# Logger has 'user_id' tag
+log_this <- logger() %>%
+  with_tags(user_id = "system") %>%
+  with_receivers(to_json() %>% on_local("app.jsonl"))
+
+# Event has 'user_id' custom field
+log_this(NOTE("Event", user_id = "alice"))
+
+# JSON output - BOTH are present:
+# {
+#   "tags": {"user_id": "system"},    # From logger
+#   "user_id": "alice"                # From event (separate field!)
+# }
+```
+
+**Best Practice**: Avoid name collisions by using clear naming conventions:
+- Logger tags: `env`, `service`, `version`
+- Event fields: `user_id`, `request_id`, `duration_ms`
+
+### Multiple Event Fields with Same Name (Overwriting)
+
+Later fields overwrite earlier ones:
+
+```{r eval=FALSE}
+log_this(NOTE("Event",
+              status = "pending",
+              status = "complete"))  # Overwrites first status
+
+# Output: status = "complete"
+```
+
+## Querying and Analysis
+
+### JSON Logs - Use Standard Tools
+
+All fields (logger tags + event custom fields) are in the JSON:
+
+```{r eval=FALSE}
+library(jsonlite)
+library(dplyr)
+
+# Read logs
+events <- stream_in(file("app.jsonl"), verbose = FALSE)
+
+# Filter by logger tags
+prod_events <- events %>% filter(environment == "production")
+
+# Filter by event custom fields
+alice_events <- events %>% filter(user_id == "alice")
+
+# Combine filters
+slow_requests <- events %>%
+  filter(component == "api", response_time_ms > 1000)
+```
+
+### Text Logs - Limited Queryability
+
+Text logs only contain what's in the template, so queryability is limited:
+
+```{r eval=FALSE}
+# Template without custom fields
+to_text("{time} [{level}] {message}")
+
+# Can only grep for level, time, message - custom fields are lost!
+# system("grep ERROR app.log")  # Works
+# system("grep user_id=alice app.log")  # Won't work - field not in output!
+```
+
+## Future Improvements
+
+Potential enhancements for text formatting:
+
+1. **Auto-append custom fields**:
+```{r eval=FALSE}
+# Future idea:
+to_text("{time} [{level}] {message}", auto_include_fields = TRUE)
+# Output: "2025-10-11 [NOTE] Event | user_id=alice component=database"
+```
+
+2. **Template variable for all custom fields**:
+```{r eval=FALSE}
+# Future idea:
+to_text("{time} [{level}] {message} {custom_fields}")
+```
+
+For now, **explicitly include fields in your template** if using text format.
+
+---
+
 # Provenance Tracking Patterns
 
 ## Data Lineage Tracking

@@ -231,14 +231,262 @@ process_data <- function(data) {
 
 ---
 
-## Pattern: Pipeline Logging
-**Tags**: `#pipeline`, `#dplyr`, `#magrittr`, `#chaining`
+## Pattern: Custom Helper Functions
+**Tags**: `#helpers`, `#custom`, `#syntactic-sugar`, `#scope-based`
 
-Log in the middle of data pipelines.
+Create your own helper functions for cleaner tagging syntax.
+
+```{r eval=FALSE}
+# Define custom helpers for your naming conventions
+
+# Example 1: Component context helper
+at_component <- function(logger, ...) {
+  logger %>% with_tags(...)
+}
+
+# Example 2: User context helper
+for_user <- function(logger, user_id, session_id = NULL) {
+  tags <- list(user_id = user_id)
+  if (!is.null(session_id)) tags$session_id <- session_id
+  do.call(with_tags, c(list(logger), tags))
+}
+
+# Example 3: Request context helper
+for_request <- function(logger, request_id, ...) {
+  logger %>% with_tags(request_id = request_id, ...)
+}
+
+# Use your custom helpers
+db_query <- function(sql) {
+  log_this <- logger() %>%
+    with_receivers(to_console()) %>%
+    at_component(component = "database", operation = "query")
+
+  log_this(NOTE("Executing query", sql = sql))
+}
+
+# In Shiny server
+server <- function(input, output, session) {
+  log_this <- logger() %>%
+    with_receivers(to_console()) %>%
+    for_user(user_id = session$user, session_id = session$token)
+
+  observeEvent(input$submit, {
+    log_this(NOTE("Form submitted"))  # Auto-tagged with user info
+  })
+}
+
+# In API endpoint
+api_handler <- function(req, res) {
+  log_this <- logger() %>%
+    with_receivers(to_console()) %>%
+    for_request(request_id = req$id, method = req$REQUEST_METHOD)
+
+  log_this(NOTE("Processing request"))
+}
+```
+
+**When to use**: Establish team-wide naming conventions, create domain-specific logging DSL, reduce boilerplate.
+
+**Note**: `logthis` intentionally keeps core API minimal - `with_tags()` is the primitive. Build helpers that match your domain and team preferences.
+
+---
+
+## Pattern: Environment-Based Configuration
+**Tags**: `#environment`, `#configuration`, `#switch-statement`, `#scope-based`
+
+Configure loggers differently based on environment (development, staging, production).
+
+```{r eval=FALSE}
+# Pattern: Switch on environment variable
+setup_logger <- function(env = Sys.getenv("ENV", "development")) {
+  env <- tolower(env)
+
+  # Start with base logger + environment tag
+  log_this <- logger() %>%
+    with_tags(environment = env)
+
+  # Configure based on environment
+  if (env == "development") {
+    # Verbose: TRACE level, console only
+    log_this <- log_this %>%
+      with_receivers(to_console(lower = TRACE)) %>%
+      with_limits(lower = TRACE)
+
+  } else if (env == "staging") {
+    # Moderate: NOTE level, console + file
+    log_this <- log_this %>%
+      with_receivers(
+        to_console(lower = NOTE),
+        to_json() %>% on_local("staging.jsonl")
+      ) %>%
+      with_limits(lower = NOTE)
+
+  } else if (env == "production") {
+    # Minimal console, full audit trail to cloud
+    log_this <- log_this %>%
+      with_receivers(
+        to_console(lower = WARNING),
+        to_json() %>%
+          on_s3(bucket = "prod-logs",
+                key = "app.jsonl",
+                region = "us-east-1")
+      ) %>%
+      with_limits(lower = NOTE)
+  }
+
+  log_this
+}
+
+# Use in application
+main <- function() {
+  log_this <- setup_logger()
+
+  log_this(DEBUG("Detailed info"))      # Only in dev
+  log_this(NOTE("Processing started"))  # All environments
+  log_this(WARNING("Issue detected"))   # All environments
+}
+
+# Or use directly in functions
+process_data <- function(data) {
+  log_this <- setup_logger() %>%
+    with_tags(component = "data_processing")
+
+  log_this(NOTE("Processing", rows = nrow(data)))
+  # ...
+}
+```
+
+**Advanced: GxP-compliant environments**
+
+```{r eval=FALSE}
+setup_gxp_logger <- function(env = Sys.getenv("ENV", "development"),
+                              study_id = NULL) {
+  env <- tolower(env)
+
+  log_this <- logger() %>%
+    with_tags(environment = env)
+
+  # Add study ID for GxP workflows
+  if (!is.null(study_id)) {
+    log_this <- log_this %>% with_tags(study_id = study_id)
+  }
+
+  if (env == "development") {
+    log_this <- log_this %>%
+      with_receivers(to_console(lower = DEBUG)) %>%
+      with_limits(lower = DEBUG)
+
+  } else if (env == "validation") {
+    # Validation environment: full audit to immutable storage
+    log_this <- log_this %>%
+      with_receivers(
+        to_console(lower = NOTE),
+        to_json() %>%
+          on_s3(bucket = "validation-logs",
+                key = paste0(study_id, "/validation.jsonl"))
+      ) %>%
+      with_limits(lower = DEBUG)  # Capture everything
+
+  } else if (env == "production") {
+    # Production: WORM storage, alerts for errors
+    log_this <- log_this %>%
+      with_receivers(
+        to_console(lower = WARNING),
+        to_json() %>%
+          on_s3(bucket = "gxp-audit-trail",
+                key = paste0(study_id, "/", Sys.Date(), ".jsonl")),
+        to_email(
+          to = "quality@pharma.com",
+          subject = paste("GxP Alert:", study_id)
+        ) %>% with_limits(lower = ERROR)
+      ) %>%
+      with_limits(lower = NOTE)
+  }
+
+  log_this
+}
+
+# Usage in clinical workflow
+analyze_trial_data <- function(data, study_id) {
+  log_this <- setup_gxp_logger(study_id = study_id) %>%
+    with_tags(component = "statistical_analysis")
+
+  log_this(NOTE("Analysis started",
+                study_id = study_id,
+                analyst = Sys.getenv("USER"),
+                timestamp = Sys.time()))
+
+  # ... analysis ...
+
+  log_this(NOTE("Analysis complete",
+                n_subjects = nrow(data),
+                analysis_duration_sec = duration))
+}
+```
+
+**When to use**: Multi-environment deployments, centralized configuration, GxP compliance, different logging strategies per environment.
+
+**Key benefit**: Users control their own configuration logic - no hardcoded paths or assumptions from the package.
+
+---
+
+## Pattern: Pipeline Logging with Tidylog
+**Tags**: `#pipeline`, `#tidylog`, `#dplyr`, `#audit-trail`
+
+Automatically log all dplyr/tidyr transformations using tidylog integration.
 
 ```{r eval=FALSE}
 library(dplyr)
+library(tidylog)
 
+# Pattern: Basic pipeline logger
+setup_pipeline_logger <- function(pipeline_name, audit_path) {
+  log_this <- logger() %>%
+    with_tags(
+      pipeline_name = pipeline_name,
+      logging_type = "pipeline"
+    ) %>%
+    with_receivers(
+      to_json() %>% on_local(path = audit_path),
+      to_console(lower = NOTE)
+    )
+
+  # Enable tidylog integration
+  log_tidyverse(logger = log_this, pipeline_id = pipeline_name)
+
+  # Log initialization
+  log_this(NOTE("Pipeline logger initialized",
+                pipeline_name = pipeline_name,
+                audit_path = audit_path))
+
+  log_this
+}
+
+# Use in pipeline
+derive_analysis_data <- function(raw_data) {
+  log_this <- setup_pipeline_logger(
+    pipeline_name = "derive_analysis",
+    audit_path = "pipeline_audit.jsonl"
+  )
+
+  # All dplyr operations are automatically logged
+  analysis_data <- raw_data %>%
+    filter(!is.na(USUBJID)) %>%          # Logged: "filter: removed X rows"
+    mutate(AGE = as.numeric(AGE)) %>%    # Logged: "mutate: converted X values"
+    select(USUBJID, AGE, SEX, RACE)      # Logged: "select: dropped X columns"
+
+  log_this(NOTE("Pipeline complete",
+                output_rows = nrow(analysis_data)))
+
+  analysis_data
+}
+```
+
+**Advanced: Manual pipeline logging**
+
+```{r eval=FALSE}
+# For more control, log manually in pipelines
 log_this <- logger() %>% with_receivers(to_console())
 
 result <- iris %>%
@@ -251,7 +499,7 @@ result <- iris %>%
 # Logger returns data unchanged, pipeline continues seamlessly
 ```
 
-**When to use**: Debug pipelines, trace data transformations, monitor data volume.
+**When to use**: Data pipeline audit trails, dplyr/tidyr transformations, clinical data derivations, reproducibility tracking.
 
 ---
 
@@ -1039,5 +1287,6 @@ See `examples/middleware/` for comprehensive examples:
 
 - [Getting Started](getting-started.html) - Basic usage guide
 - [Tagging and Provenance](tagging-and-provenance.html) - Deep dive on tagging
+- **[GxP Compliance](gxp-compliance.html) - Pharmaceutical and clinical logging patterns**
 - `.claude/use-cases.md` - Detailed use case mappings
 - `.claude/decision-tree.md` - Decision tree for common tasks
