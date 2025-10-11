@@ -140,43 +140,38 @@ log_this <- logger() %>%
   )
 ```
 
-### Pattern 2: Logger Chaining (Hierarchical Logging)
+### Pattern 2: Scope-Based Receivers (Multi-Destination Logging)
 
-Chain multiple loggers to send events to different scopes:
+Use scope-based pattern to send events to multiple destinations:
 
 ```r
-# Global logger (all errors)
-log_global <- logger() %>%
-  with_limits(lower = ERROR) %>%
-  with_receivers(
-    to_json() %>% on_s3(bucket = "global-logs", key = "errors.jsonl")
-  )
+# SCOPE-BASED PATTERN: Configure log_this in function scope
+database_operation <- function() {
+  # Configure log_this for database component with multiple receivers
+  log_this <- logger() %>%
+    with_tags(component = "database") %>%
+    with_receivers(
+      # All events to component-specific log
+      to_text() %>% on_local("database.log"),
 
-# Application logger (all events)
-log_app <- logger() %>%
-  with_receivers(
-    to_json() %>% on_local("app.jsonl")
-  )
+      # All events to application-wide audit trail
+      to_json() %>% on_local("app.jsonl"),
 
-# Component logger (component-specific)
-log_component <- logger() %>%
-  with_tags("database") %>%
-  with_receivers(
-    to_text() %>% on_local("database.log")
-  )
+      # Only errors to global error store
+      to_json() %>% on_s3(bucket = "global-logs", key = "errors.jsonl") %>% with_limits(lower = ERROR)
+    )
 
-# Chain loggers
-ERROR("Database connection failed", retry_count = 3) %>%
-  log_global() %>%   # Goes to S3 (global errors)
-  log_app() %>%      # Goes to local app.jsonl
-  log_component()    # Goes to database.log (with "database" tag)
+  # Single call, multiple destinations
+  log_this(ERROR("Database connection failed", retry_count = 3))
+  # Goes to: database.log + app.jsonl + S3 global-logs
+}
 ```
 
 **Benefits:**
-- Centralized error logging (log_global)
-- Application-wide audit trail (log_app)
-- Component-specific debugging (log_component)
-- Events flow through all loggers in chain
+- Single logger name (`log_this`) everywhere
+- Multiple receivers with different filtering
+- Scope-based configuration (doesn't pollute parent scope)
+- Component-specific tags automatically applied
 
 ### Pattern 3: Scope-Based Logger Masking
 
