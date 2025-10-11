@@ -25,6 +25,126 @@
 - 📝 **Structured Events** - Rich metadata with timestamps, tags, and custom fields
 - 🏷️ **Flexible Tagging System** - Track provenance, context, and categorization with hierarchical tags
 
+### 🏥 GxP Validation & Pharma Compliance
+
+**logthis provides enterprise-grade audit trails for pharmaceutical and clinical data validation**, integrating seamlessly with R's validation ecosystem ({validate}, {pointblank}, {arsenal}) to meet 21 CFR Part 11, GxP, and ALCOA+ requirements.
+
+**Key compliance features:**
+- **Complete audit trails** - ALCOA+ compliant (Attributable, Legible, Contemporaneous, Original, Accurate)
+- **Electronic signatures** - 21 CFR Part 11 Part B compliance
+- **Validation framework integration** - Built-in helpers for {validate}, {pointblank}, {arsenal}
+- **Immutable logging** - JSON audit trails with data integrity hashing
+- **Regulatory reporting** - Export compliance reports for FDA/EMA submissions
+
+**Quick example:**
+```r
+library(validate)
+library(logthis)
+
+# Create GxP-compliant logger
+log_gxp <- logger() %>%
+  with_tags(
+    study_id = "STUDY-001",
+    system_name = "Clinical Data Validation",
+    regulation = "21CFR11"
+  ) %>%
+  with_receivers(
+    to_json() %>% on_local(path = "audit_trail.jsonl")
+  )
+
+# Define validation rules
+rules <- validator(
+  age_valid = age >= 18 & age <= 100,
+  weight_positive = weight > 0
+)
+
+# Validate with complete audit trail
+validate_with_audit(
+  data = clinical_data,
+  rules = rules,
+  logger = log_gxp,
+  user_id = "data_manager",
+  reason = "Protocol amendment validation"
+)
+
+# Apply electronic signature (21 CFR Part 11)
+esign_validation(
+  validation_object = result,
+  logger = log_gxp,
+  user_id = "reviewer",
+  password_hash = hash_password("..."),
+  meaning = "Validation Approved"
+)
+```
+
+**See [GxP Compliance vignette](vignettes/gxp-compliance.Rmd) for comprehensive guidance.**
+
+---
+
+### 📊 Tidyverse Pipeline Logging (tidylog Integration)
+
+**Automatic audit trails for dplyr/tidyr data transformations** - integrates with {tidylog} to capture every pipeline operation with complete metadata for reproducibility and GxP compliance.
+
+**Key features:**
+- **Automatic transformation logging** - No manual logging needed
+- **Data integrity hashing** - SHA256 hashes for input/output verification
+- **Operation metadata** - Rows changed, columns modified, transformation details
+- **GxP-ready pipelines** - Complete audit trails for regulatory compliance
+- **Pipeline validation** - Optional output validation with logging
+
+**Quick example:**
+```r
+library(dplyr)
+library(tidylog)
+library(logthis)
+
+# Create pipeline logger with tidylog integration
+log_pipe <- logger() %>%
+  with_tags(
+    study_id = "STUDY-001",
+    pipeline_name = "data_cleaning"
+  ) %>%
+  with_receivers(
+    to_json() %>% on_local(path = "pipeline_audit.jsonl")
+  )
+
+# Enable tidylog integration
+log_tidyverse(logger = log_pipe, pipeline_id = "data_cleaning")
+
+# Now all dplyr/tidyr operations are logged automatically
+result <- mtcars %>%
+  filter(mpg > 20) %>%           # Logged: "filter: removed 18 rows (56%)"
+  mutate(efficiency = mpg / hp) %>%  # Logged: "mutate: new variable 'efficiency'"
+  select(mpg, hp, efficiency)    # Logged: "select: dropped 8 variables"
+
+# Or use comprehensive pipeline audit wrapper
+result <- with_pipeline_audit(
+  data = mtcars,
+  pipeline_expr = ~ . %>%
+    filter(mpg > 20) %>%
+    mutate(efficiency = mpg / hp),
+  logger = log_pipe,
+  pipeline_name = "fuel_analysis",
+  user_id = "analyst"
+)
+```
+
+**Audit trail output:**
+```json
+{"time":"2025-10-10T15:00:01Z","level":"NOTE","message":"Pipeline started: data_cleaning","pipeline_name":"data_cleaning","input_rows":32,"input_cols":11,"input_hash":"a1b2c3..."}
+{"time":"2025-10-10T15:00:02Z","level":"NOTE","message":"filter: removed 18 rows (56%), 14 rows remaining","operation":"filter","details":"removed 18 rows (56%)","transformation_type":"tidyverse"}
+{"time":"2025-10-10T15:00:02Z","level":"NOTE","message":"mutate: new variable 'efficiency' (double) with 14 unique values","operation":"mutate","transformation_type":"tidyverse"}
+{"time":"2025-10-10T15:00:03Z","level":"NOTE","message":"Pipeline completed: data_cleaning","output_rows":14,"output_cols":3,"rows_changed":-18,"output_hash":"d4e5f6..."}
+```
+
+**Perfect for:**
+- CDISC SDTM/ADaM derivations
+- Data cleaning pipelines
+- ETL workflows
+- Regulatory submissions
+
+---
+
 ### ⭐ Shiny Integration (No Python Equivalent)
 
 **The [`logshiny`](logshiny/) companion package** provides complete Shiny logging integration with 7 receivers and a unique inline alert panel system:
@@ -150,6 +270,112 @@ log_this(NOTE("This goes ONLY to console"))
 ```
 
 **Pattern:** R's lexical scoping + functional updates = safe local enhancement
+
+---
+
+### Tag-Based Hierarchy (Better Than Python's Hierarchical Loggers)
+
+**logthis uses tags instead of hierarchical namespaces** - simpler, more flexible, and more functional:
+
+```r
+# Python-style hierarchical loggers (complex, stateful):
+# logger.app.database.connection  # Global namespace pollution
+
+# logthis scope-based approach (simple, functional):
+
+# ONE logger name everywhere: log_this
+# Configure it in scopes using with_tags()
+
+# Database module
+db_connect <- function() {
+  log_this <- logger() %>%
+    with_receivers(to_console(), to_json() %>% on_local("app.jsonl")) %>%
+    with_tags(component = "database", subcomponent = "connection")
+
+  log_this(NOTE("Connection established"))
+  # Tags: component="database", subcomponent="connection"
+}
+
+# API module
+api_handler <- function() {
+  log_this <- logger() %>%
+    with_receivers(to_console(), to_json() %>% on_local("app.jsonl")) %>%
+    with_tags(component = "api")
+
+  log_this(WARNING("Rate limit approaching"))
+  # Tags: component="api"
+}
+
+# Query by tags (easy!)
+library(jsonlite)
+library(dplyr)
+
+events <- stream_in(file("app.jsonl"))
+
+# Get all database events
+db_events <- events %>% filter(component == "database")
+
+# Get specific subcomponent
+conn_events <- events %>% filter(component == "database", subcomponent == "connection")
+```
+
+**Why scope-based is better:**
+- ✅ **One logger name** - Always `log_this`, no cognitive load
+- ✅ **No global state** - Each scope configures independently
+- ✅ **Simpler mental model** - Uses R's lexical scoping naturally
+- ✅ **More flexible** - Combine any tags: `component + user_id + request_id`
+- ✅ **Better for filtering** - Query logs by any tag combination
+- ✅ **Easy refactoring** - Move code without renaming loggers
+
+**Create your own helpers for cleaner syntax (see vignette("patterns")):**
+```r
+# Environment-aware logger (auto-configures receivers)
+run_production <- function() {
+  log_this <- logger() %>%
+    with_tags(environment = "production", study_id = "STUDY-001") %>%
+    with_receivers(
+      to_json() %>% on_s3(bucket = "prod-logs", key = "app.jsonl"),
+      to_console(lower = WARNING)
+    )
+  log_this(NOTE("Production mode with audit trail"))
+}
+
+# GxP-compliant logger (pharma/clinical)
+validate_data <- function(data) {
+  log_this <- logger() %>%
+    with_tags(
+      study_id = "STUDY-001",
+      system_name = "Data Validation",
+      regulation = "21CFR11"
+    ) %>%
+    with_receivers(
+      to_json() %>% on_local(path = "validation.jsonl")
+    )
+  log_this(NOTE("Starting validation"))
+}
+
+# Pipeline logger (tidylog integration)
+process_pipeline <- function(raw_data) {
+  log_this <- logger() %>%
+    with_tags(
+      study_id = "STUDY-001",
+      pipeline_name = "dm_derivation"
+    ) %>%
+    with_receivers(
+      to_json() %>% on_local(path = "pipeline.jsonl")
+    )
+
+  # Enable tidylog integration
+  log_tidyverse(logger = log_this, pipeline_id = "dm_derivation")
+
+  # Automatically logs dplyr/tidyr operations
+}
+
+# Custom helper for user context
+for_user <- function(logger, user_id, session_id = NULL) {
+  logger %>% with_tags(user_id = user_id, session_id = session_id)
+}
+```
 
 ---
 
@@ -991,6 +1217,210 @@ process_request <- function(request_id) {
 
 ## Use Cases
 
+### GxP Validation & Pharmaceutical Compliance
+
+```r
+library(validate)
+library(pointblank)
+library(logthis)
+
+# Setup GxP-compliant logger with immutable audit trail
+log_gxp <- logger() %>%
+  with_tags(
+    study_id = "STUDY-001",
+    system_name = "Clinical Data Validation System",
+    regulation = "21CFR11",
+    environment = "production"
+  ) %>%
+  with_receivers(
+    to_json() %>% on_local(path = "audit_trails/validation.jsonl")
+  )
+
+# Method 1: Using {validate} package
+rules <- validator(
+  age_range = age >= 18 & age <= 100,
+  weight_positive = weight > 0,
+  required_fields = !is.na(patient_id)
+)
+
+result <- validate_with_audit(
+  data = clinical_data,
+  rules = rules,
+  logger = log_gxp,
+  user_id = "data_manager",
+  reason = "Monthly data quality check",
+  study_id = "STUDY-001"
+)
+
+# Method 2: Using {pointblank} for advanced validation
+agent <- create_agent_with_audit(
+  tbl = clinical_data,
+  logger = log_gxp,
+  study_id = "STUDY-001"
+) %>%
+  col_vals_not_null(vars(patient_id)) %>%
+  col_vals_between(vars(age), 18, 100) %>%
+  col_vals_in_set(vars(treatment), c("A", "B", "C")) %>%
+  interrogate_with_audit(
+    logger = log_gxp,
+    user_id = "data_manager"
+  )
+
+# Dataset reconciliation for data lock
+compare_datasets_with_audit(
+  old_data = baseline_data,
+  new_data = updated_data,
+  logger = log_gxp,
+  user_id = "data_manager",
+  reason = "Database lock reconciliation",
+  study_id = "STUDY-001"
+)
+
+# Apply electronic signature (21 CFR Part 11 compliance)
+esign_validation(
+  validation_object = result,
+  logger = log_gxp,
+  user_id = "medical_reviewer",
+  password_hash = digest::digest("secure_password"),
+  meaning = "Medical Review Approved",
+  study_id = "STUDY-001"
+)
+
+# Generate compliance report from audit trail
+audit_data <- jsonlite::stream_in(file("audit_trails/validation.jsonl"))
+
+compliance_report <- audit_data %>%
+  filter(grepl("validation|signature", message, ignore.case = TRUE)) %>%
+  select(
+    timestamp = time,
+    user = user_id,
+    action = message,
+    study_id,
+    dataset_name
+  ) %>%
+  arrange(timestamp)
+
+# Export for regulatory submission
+write.csv(compliance_report, "21CFR11_Compliance_Report.csv")
+```
+
+**Audit trail output (JSON Lines format):**
+```json
+{"time":"2025-10-10T14:30:15Z","level":"NOTE","level_number":30,"message":"Validation started","user_id":"data_manager","reason":"Monthly data quality check","study_id":"STUDY-001","n_records":500,"n_rules":3,"dataset_hash":"a1b2c3d4...","system":"Clinical Data Validation System","regulation":"21CFR11"}
+{"time":"2025-10-10T14:30:16Z","level":"WARNING","level_number":60,"message":"Validation rule failed: age_range","user_id":"data_manager","study_id":"STUDY-001","rule_name":"age_range","fails":5,"passes":495,"expression":"age >= 18 & age <= 100"}
+{"time":"2025-10-10T14:30:20Z","level":"NOTE","level_number":30,"message":"Electronic signature applied","user_id":"medical_reviewer","study_id":"STUDY-001","meaning":"Medical Review Approved","signed_at":"2025-10-10T14:30:20-0400","validation_hash":"e5f6g7h8..."}
+```
+
+---
+
+### Data Pipeline Audit Trails (Tidylog Integration)
+
+Track all data transformations with complete audit trails:
+
+```r
+library(dplyr)
+library(tidyr)
+library(tidylog)
+library(logthis)
+
+# Create pipeline logger with GxP compliance
+log_pipe <- logger() %>%
+  with_tags(
+    study_id = "STUDY-001",
+    pipeline_name = "sdtm_dm_derivation"
+  ) %>%
+  with_receivers(
+    to_json() %>% on_local(path = "sdtm_pipeline.jsonl")
+  )
+
+# Enable tidylog integration
+log_tidyverse(logger = log_pipe, pipeline_id = "sdtm_dm_derivation")
+
+# Method 1: Automatic logging (tidylog integration)
+# Every dplyr/tidyr operation is automatically logged
+dm <- raw_demographics %>%
+  filter(!is.na(USUBJID)) %>%            # Auto-logged
+  mutate(
+    AGE = as.numeric(AGE),
+    AGEU = "YEARS"
+  ) %>%                                    # Auto-logged
+  select(STUDYID, USUBJID, AGE, AGEU, SEX, RACE) %>%  # Auto-logged
+  distinct()                               # Auto-logged
+
+# Method 2: Comprehensive pipeline audit with validation
+dm <- with_pipeline_audit(
+  data = raw_demographics,
+  pipeline_expr = ~ . %>%
+    filter(!is.na(USUBJID)) %>%
+    mutate(AGE = as.numeric(AGE)) %>%
+    select(STUDYID, USUBJID, AGE, SEX),
+  logger = log_pipe,
+  pipeline_name = "dm_core_variables",
+  user_id = "data_programmer",
+  study_id = "STUDY-001",
+  validate_output = function(data) {
+    # Validate output meets SDTM requirements
+    all(c("STUDYID", "USUBJID", "AGE", "SEX") %in% names(data))
+  }
+)
+
+# Method 3: Manual transformation tracking (non-dplyr operations)
+# For custom transformations or base R operations
+before <- raw_data
+after <- my_custom_transform(raw_data)
+
+track_transformation(
+  data_before = before,
+  data_after = after,
+  operation_name = "custom_date_imputation",
+  logger = log_pipe,
+  user_id = "data_programmer",
+  method = "LOCF",
+  imputed_count = sum(is.na(before$date)) - sum(is.na(after$date))
+)
+
+# Combine with validation for complete GxP workflow
+library(validate)
+
+# First: Transform data with audit trail
+transformed_data <- with_pipeline_audit(
+  data = raw_data,
+  pipeline_expr = ~ . %>% filter(AGE >= 18) %>% mutate(BMI = WEIGHT / (HEIGHT/100)^2),
+  logger = log_pipe,
+  pipeline_name = "bmi_calculation"
+)
+
+# Second: Validate with audit trail
+validation_rules <- validator(
+  bmi_range = BMI >= 10 & BMI <= 60,
+  age_adult = AGE >= 18
+)
+
+validate_with_audit(
+  data = transformed_data,
+  rules = validation_rules,
+  logger = log_pipe,
+  user_id = "data_manager",
+  reason = "Post-transformation validation"
+)
+
+# Generate pipeline summary report
+summary <- get_pipeline_summary(
+  "sdtm_pipeline.jsonl",
+  pipeline_name = "sdtm_dm_derivation"
+)
+print(summary)
+```
+
+**Pipeline audit trail shows:**
+- Every transformation step with before/after row counts
+- Data integrity hashes (SHA256) for input/output
+- User attribution and timestamps
+- Operation-specific metadata (columns changed, values modified)
+- Validation results tied to specific pipeline versions
+
+---
+
 ### Shiny Applications
 
 **Using the new `logshiny::alert_panel()` (recommended):**
@@ -1325,7 +1755,9 @@ covr::package_coverage()
 For detailed guides and advanced techniques:
 
 - **[Getting Started](vignettes/getting-started.Rmd)** - Basic setup and usage patterns
+- **[GxP Compliance & Pharmaceutical Logging](vignettes/gxp-compliance.Rmd)** - 🏥 Pharmaceutical data validation, 21 CFR Part 11 compliance, and ALCOA+ audit trails
 - **[Tagging and Provenance](vignettes/tagging-and-provenance.Rmd)** - Track data lineage, execution context, and build audit trails with hierarchical tags
+- **[Python Comparison](vignettes/python-comparison.Rmd)** - Comparison with Python logging solutions, including pharma audit trail patterns
 
 ## Development and Testing
 

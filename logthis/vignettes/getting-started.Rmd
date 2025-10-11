@@ -158,13 +158,86 @@ user_event <- WARNING("User login failed",
 log_this(user_event)
 ```
 
+## Common Use Cases
+
+`logthis` is designed for a variety of enterprise applications:
+
+### GxP Validation & Pharmaceutical Compliance
+
+For pharmaceutical and clinical research, logthis provides complete audit trails for data validation:
+
+```{r gxp-example, eval=FALSE}
+library(validate)
+
+# Create GxP-compliant logger
+log_gxp <- logger() %>%
+  with_tags(
+    study_id = "STUDY-001",
+    system_name = "Clinical Data Validation",
+    regulation = "21CFR11"
+  ) %>%
+  with_receivers(
+    to_json() %>% on_local(path = "audit_trail.jsonl")
+  )
+
+# Define validation rules
+rules <- validator(
+  age_valid = age >= 18 & age <= 100,
+  weight_positive = weight > 0
+)
+
+# Validate with audit trail
+validate_with_audit(
+  data = clinical_data,
+  rules = rules,
+  logger = log_gxp,
+  user_id = "data_manager",
+  reason = "Monthly data quality check"
+)
+```
+
+See the **[GxP Validation vignette](gxp-validation.Rmd)** for comprehensive guidance on 21 CFR Part 11 compliance, electronic signatures, and ALCOA+ audit trails.
+
+### Shiny Applications
+
+Log user interactions and errors in Shiny apps:
+
+```{r shiny-example, eval=FALSE}
+library(logshiny)
+
+server <- function(input, output, session) {
+  log_this <- logger() %>%
+    with_receivers(
+      to_console(),
+      logshiny::to_shinyalert(lower = ERROR)
+    )
+
+  observeEvent(input$submit, {
+    log_this(NOTE("User submitted form"))
+  })
+}
+```
+
+### Data Analysis Pipelines
+
+Track data processing steps:
+
+```{r pipeline-example, eval=FALSE}
+log_this <- logger() %>%
+  with_receivers(
+    to_console(),
+    to_json() %>% on_local("pipeline.jsonl")
+  )
+
+log_this(NOTE("Starting data processing"))
+log_this(MESSAGE(paste("Processed", nrow(data), "records")))
+```
+
 ## Next Steps
 
-This covers the basics of using `logthis`. For more advanced usage including:
+This covers the basics of using `logthis`. For more advanced usage, see:
 
-- Integration with Shiny applications
-- Custom receivers
-- File logging
-- Production configurations
-
-See the "Advanced Usage" vignette.
+- **[GxP Validation & Compliance](gxp-validation.Rmd)** - Pharmaceutical data validation with audit trails
+- **[Tagging and Provenance](tagging-and-provenance.Rmd)** - Track data lineage and context
+- **[Advanced Receivers](advanced-receivers.Rmd)** - Cloud storage, webhooks, and custom outputs
+- **[Patterns](patterns.Rmd)** - Common logging patterns and best practices
