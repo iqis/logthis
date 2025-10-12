@@ -13,13 +13,7 @@ jobs:
   check-logthis:
     runs-on: self-hosted
 
-    name: logthis self-hosted (${{ matrix.config.r }})
-
-    strategy:
-      fail-fast: false
-      matrix:
-        config:
-          - {r: 'release'}
+    name: logthis self-hosted (devcontainer)
 
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
@@ -28,35 +22,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: r-lib/actions/setup-pandoc@v2
-
-      - uses: r-lib/actions/setup-r@v2
+      - name: Run R CMD check in devcontainer
+        uses: devcontainers/ci@v0.3
         with:
-          r-version: ${{ matrix.config.r }}
-          http-user-agent: ${{ matrix.config.http-user-agent }}
-          use-public-rspm: true
-
-      - name: Install pak
-        run: |
-          install.packages('pak', repos = sprintf('https://r-lib.github.io/p/pak/stable/%s/%s/%s', .Platform$pkgType, R.Version()$os, R.Version()$arch))
-        shell: Rscript {0}
-
-      - uses: r-lib/actions/setup-r-dependencies@v2
-        with:
-          extra-packages: any::rcmdcheck
-          needs: check
-          working-directory: logthis
-
-      - uses: r-lib/actions/check-r-package@v2
-        with:
-          upload-snapshots: true
-          working-directory: logthis
+          runCmd: |
+            cd logthis
+            R CMD build .
+            R CMD check --as-cran *.tar.gz
 
   check-logshiny:
     runs-on: self-hosted
     needs: check-logthis
 
-    name: logshiny self-hosted (release)
+    name: logshiny self-hosted (devcontainer)
 
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
@@ -65,31 +43,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: r-lib/actions/setup-pandoc@v2
-
-      - uses: r-lib/actions/setup-r@v2
+      - name: Run R CMD check for logshiny in devcontainer
+        uses: devcontainers/ci@v0.3
         with:
-          r-version: 'release'
-          use-public-rspm: true
-
-      - name: Install pak
-        run: |
-          install.packages('pak', repos = sprintf('https://r-lib.github.io/p/pak/stable/%s/%s/%s', .Platform$pkgType, R.Version()$os, R.Version()$arch))
-        shell: Rscript {0}
-
-      # Install logthis first (dependency)
-      - name: Install logthis
-        run: |
-          R CMD INSTALL logthis
-        shell: bash
-
-      - uses: r-lib/actions/setup-r-dependencies@v2
-        with:
-          extra-packages: any::rcmdcheck
-          needs: check
-          working-directory: logshiny
-
-      - uses: r-lib/actions/check-r-package@v2
-        with:
-          upload-snapshots: true
-          working-directory: logshiny
+          runCmd: |
+            R CMD INSTALL logthis
+            cd logshiny
+            R CMD build .
+            R CMD check --as-cran *.tar.gz
