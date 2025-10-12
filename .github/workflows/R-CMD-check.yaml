@@ -11,15 +11,15 @@ name: R-CMD-check
 
 jobs:
   check-logthis:
-    runs-on: ${{ matrix.config.os }}
+    runs-on: self-hosted
 
-    name: logthis ${{ matrix.config.os }} (${{ matrix.config.r }})
+    name: logthis self-hosted (${{ matrix.config.r }})
 
     strategy:
       fail-fast: false
       matrix:
         config:
-          - {os: ubuntu-latest,   r: 'release'}
+          - {r: 'release'}
 
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
@@ -48,10 +48,10 @@ jobs:
           working-directory: logthis
 
   check-logshiny:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: check-logthis
 
-    name: logshiny ubuntu-latest (release)
+    name: logshiny self-hosted (release)
 
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}

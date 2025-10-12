@@ -7,6 +7,15 @@ RUN apt-get update && apt-get install -y \
     curl \
     unzip \
     sudo \
+    gpg \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install GitHub CLI (gh)
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+    && apt-get update \
+    && apt-get install -y gh \
     && rm -rf /var/lib/apt/lists/*
 
 # Modify existing user (rstudio) to be named vscode and give sudo privileges
@@ -21,6 +30,11 @@ RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2
     && unzip awscliv2.zip \
     && ./aws/install \
     && rm -rf aws awscliv2.zip
+
+# Install Node.js and npm if not present, then install devcontainer CLI
+RUN apt-get update && apt-get install -y nodejs npm \
+    && npm install -g @devcontainers/cli \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install renv for dependency management and languageserver for VS Code integration
 RUN R -e "install.packages(c('renv', 'languageserver'), repos='https://cloud.r-project.org')"

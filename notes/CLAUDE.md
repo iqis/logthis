@@ -4,6 +4,80 @@
 **Package Version:** 0.1.0.9000
 **Status:** Production-ready, CRAN submission pending
 
+## Development Environment
+
+### Current Environment Detection
+
+To determine which environment you're in, check these indicators:
+
+**1. Docker Container Detection:**
+```bash
+test -f /.dockerenv && echo "In Docker" || echo "On host"
+```
+
+**2. code-server Detection:**
+```bash
+ps aux | grep -i code-server | grep -v grep
+# If processes found: Running in code-server container
+```
+
+**3. Devcontainer Detection:**
+```bash
+# Check if running in GitHub Codespaces or devcontainer
+test -n "$CODESPACES" && echo "GitHub Codespaces" || \
+test -n "$REMOTE_CONTAINERS" && echo "VS Code devcontainer" || \
+echo "Not in devcontainer"
+```
+
+### Environment Types
+
+**Environment 1: GitHub Codespaces (Direct Devcontainer)**
+- Running directly in `.devcontainer/` environment
+- Full R development environment available
+- Docker not available inside container (Codespaces limitation)
+- Best for: R package development, testing, documentation
+
+**Environment 2: code-server with Docker-in-Docker (Local Development)**
+- Running in code-server container (`/app/code-server`)
+- Docker CLI available via socket mount (`/var/run/docker.sock`)
+- Can build and run devcontainers using `devcontainer` CLI
+- Working directory: `/home/siqi/projects/logthis`
+- Best for: When GitHub Codespaces unavailable, local control needed
+
+**Environment 3: Host Machine**
+- Direct access to system
+- Full Docker control
+- Can manage code-server container from outside
+- Best for: Container orchestration, infrastructure changes
+
+### Current Session Environment
+
+Based on detection, this session is running in: **code-server with Docker-in-Docker**
+
+Evidence:
+- `/.dockerenv` exists (Docker container)
+- code-server processes running on port 8443
+- Can access `/var/run/docker.sock` for Docker commands
+- User: `siqi`, working directory: `/home/siqi/projects/logthis`
+
+### Using Devcontainers from code-server
+
+When in code-server environment, you can build and run the logthis devcontainer:
+
+```bash
+# Build devcontainer image
+cd /home/siqi/projects/logthis
+devcontainer build --workspace-folder .
+
+# Run devcontainer interactively
+devcontainer up --workspace-folder .
+
+# Execute commands in devcontainer
+devcontainer exec --workspace-folder . R CMD check .
+```
+
+**Note:** See `REBUILD_CODE_SERVER.md` for rebuilding code-server with Docker support.
+
 ## Project Overview
 
 `logthis` is a structured logging framework for R that provides enterprise-level logging capabilities similar to log4j or Python's logging module. It uses functional composition patterns and is designed for R packages, Shiny applications, data analysis pipelines, and **pharmaceutical/clinical compliance systems**.
