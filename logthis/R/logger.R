@@ -186,11 +186,12 @@ void_logger <- function(){
 #'     with_receivers(to_console(), append = FALSE)
 #'
 with_receivers <- function(logger, ..., append = TRUE){
-  if (!inherits(logger, "logger")) {
-    stop("Argument `logger` must be of type 'logger'.\n",
-         "  Solution: Create a logger first with logger() or void_logger()\n",
-         "  Example: log_this <- logger() %>% with_receivers(to_console())")
-  }
+  # PRECONDITIONS: Validate inputs
+  require_that(
+    "logger must be logger class" = inherits(logger, "logger"),
+    "append must be logical" = is.logical(append),
+    "append must have length 1" = length(append) == 1
+  )
 
   # Capture the original calls to the receivers
   receiver_calls <- substitute(list(...))[-1]  # Remove the 'list' part
@@ -277,6 +278,20 @@ with_receivers <- function(logger, ..., append = TRUE){
   }
   attr(logger, "config") <- config
 
+  # INVARIANT: Ensure receivers, labels, and names are all in sync
+  check_invariant(
+    "receivers and labels match length" =
+      length(config$receivers) == length(config$receiver_labels),
+    "receivers and names match length" =
+      length(config$receivers) == length(config$receiver_names)
+  )
+
+  # POSTCONDITION: Ensure result is valid logger
+  ensure_that(
+    "result is logger" = inherits(logger, "logger"),
+    "result has config" = !is.null(attr(logger, "config"))
+  )
+
   logger
 }
 
@@ -341,42 +356,54 @@ with_limits <- function(x, lower, upper, ...){
 with_limits.logger <- function(x, lower = LOWEST, upper = HIGHEST, ...){
   logger <- x
 
+  # PRECONDITIONS: Validate inputs
+  require_that(
+    "logger must be logger class" = inherits(logger, "logger")
+  )
+
   lower <- make_level_number(lower)
   upper <- make_level_number(upper)
 
+  # PRECONDITIONS: Validate level ranges
+  if (!is.null(lower)) {
+    require_that(
+      "lower must be in range [0, 99]" = lower >= 0 && lower <= 99
+    )
+  }
+
+  if (!is.null(upper)) {
+    require_that(
+      "upper must be in range [1, 100]" = upper >= 1 && upper <= 100
+    )
+  }
+
+  # PRECONDITION: Validate lower <= upper
+  if (!is.null(lower) && !is.null(upper)) {
+    require_that(
+      "lower must be <= upper" = lower <= upper
+    )
+  }
+
   config <- attr(logger, "config")
 
-  # guard limit values & apply to config if not null
+  # Apply limits to config
   if (!is.null(lower)) {
-    if (lower < 0 | lower > 99) {
-      stop(glue::glue("Lower limit must be in [0, 99], got {lower}\n",
-                      "  Solution: Use standard levels like LOWEST(0), TRACE(10), DEBUG(20), NOTE(30), etc.\n",
-                      "  Or: Use numeric value in range [0, 99]\n",
-                      "  See: R/log_event_levels.R for standard levels"))
-    }
     config$limits$lower <- lower
   }
 
   if (!is.null(upper)) {
-    if (upper < 1 | upper > 100) {
-      stop(glue::glue("Upper limit must be in [1, 100], got {upper}\n",
-                      "  Solution: Use standard levels like ERROR(80), CRITICAL(90), HIGHEST(100)\n",
-                      "  Or: Use numeric value in range [1, 100]\n",
-                      "  See: R/log_event_levels.R for standard levels"))
-    }
     config$limits$upper <- upper
   }
 
-  # Validate lower <= upper
-  if (!is.null(lower) && !is.null(upper)) {
-    if (lower > upper) {
-      stop(glue::glue("Lower limit ({lower}) must be less than or equal to upper limit ({upper})\n",
-                      "  Solution: Ensure lower <= upper\n",
-                      "  Example: with_limits(lower = NOTE, upper = ERROR) # NOTE(30) < ERROR(80)"))
-    }
-  }
-
   attr(logger, "config") <- config
+
+  # POSTCONDITION: Ensure result is valid logger
+  ensure_that(
+    "result is logger" = inherits(logger, "logger"),
+    "lower limit is valid" = config$limits$lower >= 0 && config$limits$lower <= 99,
+    "upper limit is valid" = config$limits$upper >= 1 && config$limits$upper <= 100,
+    "lower <= upper" = config$limits$lower <= config$limits$upper
+  )
 
   logger
 }
