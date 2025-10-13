@@ -702,9 +702,9 @@ with_tags.logger <- function(x, ..., append = TRUE){
 
   # PRECONDITION: Check each tag is character
   for (i in seq_along(tag_list)) {
-    require_that(
-      paste("tag", i, "must be character") = is.character(tag_list[[i]])
-    )
+    condition_name <- paste("tag", i, "must be character")
+    conditions <- setNames(list(is.character(tag_list[[i]])), condition_name)
+    do.call(require_that, conditions)
   }
 
   tags <- unlist(tag_list)
@@ -911,9 +911,9 @@ with_middleware.logger <- function(x, ...) {
   # PRECONDITION: Validate all are functions
   for (i in seq_along(middleware_fns)) {
     mw <- middleware_fns[[i]]
-    require_that(
-      paste("middleware", i, "must be function") = is.function(mw)
-    )
+    condition_name <- paste("middleware", i, "must be function")
+    conditions <- setNames(list(is.function(mw)), condition_name)
+    do.call(require_that, conditions)
   }
 
   # Get logger config and add middleware
