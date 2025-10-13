@@ -24,15 +24,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Build devcontainer
+        run: docker build -f .devcontainer/Dockerfile -t logthis-dev .
 
       - name: Build pkgdown site in devcontainer
-        uses: devcontainers/ci@v0.3
-        with:
-          runCmd: |
+        run: |
+          docker run --rm -v $PWD:/workspace -w /workspace logthis-dev bash -c "
             cd logthis
-            Rscript -e "pkgdown::build_site_github_pages(new_process = FALSE, install = TRUE)"
+            Rscript -e 'pkgdown::build_site_github_pages(new_process = FALSE, install = TRUE)'
+          "
 
       - name: Upload artifact
         if: github.event_name != 'pull_request'

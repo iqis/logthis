@@ -22,16 +22,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Build devcontainer
+        run: docker build -f .devcontainer/Dockerfile -t logthis-dev .
 
       - name: Run R CMD check in devcontainer
-        uses: devcontainers/ci@v0.3
-        with:
-          runCmd: |
+        run: |
+          docker run --rm -v $PWD:/workspace -w /workspace logthis-dev bash -c "
             cd logthis
             R CMD build .
             R CMD check --as-cran *.tar.gz
+          "
 
   check-logshiny:
     runs-on: self-hosted
@@ -46,14 +46,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Build devcontainer
+        run: docker build -f .devcontainer/Dockerfile -t logthis-dev .
 
       - name: Run R CMD check for logshiny in devcontainer
-        uses: devcontainers/ci@v0.3
-        with:
-          runCmd: |
+        run: |
+          docker run --rm -v $PWD:/workspace -w /workspace logthis-dev bash -c "
             R CMD INSTALL logthis
             cd logshiny
             R CMD build .
             R CMD check --as-cran *.tar.gz
+          "
