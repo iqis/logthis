@@ -30,11 +30,7 @@ jobs:
       - name: Build pkgdown site in devcontainer
         run: |
           docker run --rm -v $PWD:/workspace -w /workspace logthis-dev bash -c "
-            cd logthis
-            ls -la
-            pwd
-            test -f DESCRIPTION && echo 'DESCRIPTION found' || echo 'DESCRIPTION not found'
-            Rscript -e 'pkgdown::build_site()'
+            cd logthis && Rscript -e 'pkgdown::build_site()'
           "
 
       - name: Upload artifact

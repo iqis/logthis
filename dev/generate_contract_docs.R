@@ -7,7 +7,7 @@
 #'
 #' Run: Rscript dev/generate_contract_docs.R
 
-library(logthis)
+# No need to library(logthis) - we use devtools::load_all() below
 
 #' Extract all contracts from package
 #'
