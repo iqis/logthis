@@ -12,10 +12,9 @@
 #' - Serve as single source of truth for function specifications
 #'
 #' @section Contract Registry:
-#' All contracts are automatically registered for introspection:
-#' - `get_all_contracts()` - List all contracts in package
-#' - `get_function_contracts("logger")` - Get contracts for specific function
-#' - `verify_all_contracts()` - Run contract verification tests
+#' All contracts are automatically registered for internal introspection.
+#' The registry is used by dev/generate_contract_docs.R to extract
+#' contracts from code for documentation generation.
 #'
 #' @name contracts
 NULL
@@ -40,24 +39,57 @@ NULL
   )
 }
 
+#' Core contract checking logic
+#' @keywords internal
+.check_contract <- function(conditions,
+                           contract_type,
+                           calling_fn = NULL,
+                           enabled = TRUE,
+                           error_formatter) {
+  condition_names <- names(conditions)
+
+  if (is.null(condition_names) || any(condition_names == "")) {
+    stop(sprintf("All %s must be named", contract_type), call. = FALSE)
+  }
+
+  # Auto-detect calling function if not provided
+  if (is.null(calling_fn)) {
+    calling_fn <- deparse(sys.call(-2)[[1]])
+  }
+
+  # Register contract for introspection
+  .register_contract(calling_fn, contract_type, condition_names)
+
+  if (!enabled) return(invisible(NULL))
+
+  # Check all conditions
+  for (i in seq_along(conditions)) {
+    if (!isTRUE(conditions[[i]])) {
+      stop(error_formatter(condition_names[i], calling_fn), call. = FALSE)
+    }
+  }
+
+  invisible(NULL)
+}
+
 #' Get all registered contracts
 #'
 #' Returns all contracts registered during package execution.
-#' Useful for generating documentation and verification.
+#' Used internally by dev/generate_contract_docs.R.
 #'
 #' @return Named list of contracts by function
-#' @export
-#' @family contracts
+#' @keywords internal
 get_all_contracts <- function() {
   as.list(.contract_registry)
 }
 
 #' Get contracts for specific function
 #'
+#' Used internally by dev/generate_contract_docs.R.
+#'
 #' @param fn_name Function name as string
 #' @return List with preconditions, postconditions, invariants
-#' @export
-#' @family contracts
+#' @keywords internal
 get_function_contracts <- function(fn_name) {
   if (!exists(fn_name, envir = .contract_registry)) {
     return(list(
@@ -93,34 +125,19 @@ get_function_contracts <- function(fn_name) {
 require_that <- function(...,
                         .enabled = getOption("logthis.contracts", TRUE),
                         .calling_fn = NULL) {
-  conditions <- list(...)
-  condition_names <- names(conditions)
-
-  if (is.null(condition_names) || any(condition_names == "")) {
-    stop("All preconditions must be named", call. = FALSE)
-  }
-
-  # Register contract for introspection
-  if (is.null(.calling_fn)) {
-    # Auto-detect calling function
-    .calling_fn <- deparse(sys.call(-1)[[1]])
-  }
-  .register_contract(.calling_fn, "preconditions", condition_names)
-
-  if (!.enabled) return(invisible(NULL))
-
-  for (i in seq_along(conditions)) {
-    if (!isTRUE(conditions[[i]])) {
-      stop(
-        "Precondition failed: ", condition_names[i], "\n",
-        "  Function: ", .calling_fn, "\n",
-        "  This indicates incorrect usage. Please check the function documentation.",
-        call. = FALSE
+  .check_contract(
+    conditions = list(...),
+    contract_type = "preconditions",
+    calling_fn = .calling_fn,
+    enabled = .enabled,
+    error_formatter = function(condition, fn) {
+      paste0(
+        "Precondition failed: ", condition, "\n",
+        "  Function: ", fn, "\n",
+        "  This indicates incorrect usage. Please check the function documentation."
       )
     }
-  }
-
-  invisible(NULL)
+  )
 }
 
 
@@ -154,35 +171,21 @@ require_that <- function(...,
 ensure_that <- function(...,
                        .enabled = getOption("logthis.contracts", TRUE),
                        .calling_fn = NULL) {
-  conditions <- list(...)
-  condition_names <- names(conditions)
-
-  if (is.null(condition_names) || any(condition_names == "")) {
-    stop("All postconditions must be named", call. = FALSE)
-  }
-
-  # Register contract for introspection
-  if (is.null(.calling_fn)) {
-    .calling_fn <- deparse(sys.call(-1)[[1]])
-  }
-  .register_contract(.calling_fn, "postconditions", condition_names)
-
-  if (!.enabled) return(invisible(NULL))
-
-  for (i in seq_along(conditions)) {
-    if (!isTRUE(conditions[[i]])) {
-      stop(
-        "Postcondition failed: ", condition_names[i], "\n",
-        "  Function: ", .calling_fn, "\n",
+  .check_contract(
+    conditions = list(...),
+    contract_type = "postconditions",
+    calling_fn = .calling_fn,
+    enabled = .enabled,
+    error_formatter = function(condition, fn) {
+      paste0(
+        "Postcondition failed: ", condition, "\n",
+        "  Function: ", fn, "\n",
         "  This is a BUG in logthis. Please report at: ",
         "https://github.com/iqis/logthis/issues\n",
-        "  Include the full error message and a reproducible example.",
-        call. = FALSE
+        "  Include the full error message and a reproducible example."
       )
     }
-  }
-
-  invisible(NULL)
+  )
 }
 
 
@@ -220,34 +223,20 @@ ensure_that <- function(...,
 check_invariant <- function(...,
                            .enabled = getOption("logthis.contracts", TRUE),
                            .calling_fn = NULL) {
-  conditions <- list(...)
-  condition_names <- names(conditions)
-
-  if (is.null(condition_names) || any(condition_names == "")) {
-    stop("All invariants must be named", call. = FALSE)
-  }
-
-  # Register contract for introspection
-  if (is.null(.calling_fn)) {
-    .calling_fn <- deparse(sys.call(-1)[[1]])
-  }
-  .register_contract(.calling_fn, "invariants", condition_names)
-
-  if (!.enabled) return(invisible(NULL))
-
-  for (i in seq_along(conditions)) {
-    if (!isTRUE(conditions[[i]])) {
-      stop(
-        "Invariant violated: ", condition_names[i], "\n",
-        "  Function: ", .calling_fn, "\n",
+  .check_contract(
+    conditions = list(...),
+    contract_type = "invariants",
+    calling_fn = .calling_fn,
+    enabled = .enabled,
+    error_formatter = function(condition, fn) {
+      paste0(
+        "Invariant violated: ", condition, "\n",
+        "  Function: ", fn, "\n",
         "  This indicates corrupted internal state (BUG).\n",
-        "  Please report at: https://github.com/iqis/logthis/issues",
-        call. = FALSE
+        "  Please report at: https://github.com/iqis/logthis/issues"
       )
     }
-  }
-
-  invisible(NULL)
+  )
 }
 
 

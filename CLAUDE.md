@@ -76,8 +76,6 @@ devcontainer up --workspace-folder .
 devcontainer exec --workspace-folder . R CMD check .
 ```
 
-**Note:** See `REBUILD_CODE_SERVER.md` for rebuilding code-server with Docker support.
-
 ## Project Overview
 
 `logthis` is a structured logging framework for R that provides enterprise-level logging capabilities similar to log4j or Python's logging module. It uses functional composition patterns and is designed for R packages, Shiny applications, data analysis pipelines, and **pharmaceutical/clinical compliance systems**.
