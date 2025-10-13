@@ -27,19 +27,9 @@ jobs:
       - name: Build devcontainer
         run: docker build -f .devcontainer/Dockerfile -t logthis-dev .
 
-      - name: Debug - List workspace contents
-        run: |
-          echo "PWD: $PWD"
-          echo "Workspace contents:"
-          ls -la
-          echo "Inside Docker container:"
-          docker run --rm -v $PWD:/workspace -w /workspace logthis-dev ls -la
-          echo "Inside logthis directory:"
-          docker run --rm -v $PWD:/workspace -w /workspace logthis-dev ls -la logthis/
-
       - name: Build pkgdown site in devcontainer
         run: |
-          docker run --rm -v $PWD:/workspace -w /workspace logthis-dev bash -c "
+          docker run --rm -v $PWD:/work$GITHUB_RUN_ID -w /work$GITHUB_RUN_ID logthis-dev bash -c "
             cd logthis && Rscript -e 'pkgdown::build_site()'
           "
 
