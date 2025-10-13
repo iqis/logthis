@@ -29,8 +29,8 @@ jobs:
 
       - name: Build pkgdown site in devcontainer
         run: |
-          docker run --rm -v "$GITHUB_WORKSPACE:/workspace" -w /workspace/logthis logthis-dev bash -c "
-            Rscript -e 'pkgdown::build_site()'
+          docker run --rm -v $PWD:/workspace -w /workspace logthis-dev bash -c "
+            cd logthis && Rscript -e 'pkgdown::build_site()'
           "
 
       - name: Upload artifact
