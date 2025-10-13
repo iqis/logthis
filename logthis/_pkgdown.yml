@@ -36,6 +36,8 @@ navbar:
         href: articles/python-comparison.html
       - text: Migration Guide
         href: articles/migration-guide.html
+      - text: GxP Compliance
+        href: articles/gxp-compliance.html
     news:
       text: Changelog
       href: news/index.html
@@ -77,12 +79,6 @@ reference:
   desc: Output to console and user interfaces
   contents:
   - to_console
-  - to_shinyalert
-  - to_sweetalert
-  - to_notif
-  - to_show_toast
-  - to_toastr
-  - to_js_console
 
 - title: Formatters
   desc: Format log events for output
@@ -142,6 +138,20 @@ reference:
   contents:
   - '`%>%`'
 
+- title: GxP Validation & Compliance
+  desc: Functions for GxP-compliant validation and auditing
+  contents:
+  - compare_datasets_with_audit
+  - create_agent_with_audit
+  - disable_tidylog
+  - esign_validation
+  - get_pipeline_summary
+  - interrogate_with_audit
+  - log_tidyverse
+  - track_transformation
+  - validate_with_audit
+  - with_pipeline_audit
+
 articles:
 - title: Getting Started
   navbar: ~
@@ -172,6 +182,11 @@ articles:
   navbar: ~
   contents:
   - migration-guide
+
+- title: GxP Compliance
+  navbar: ~
+  contents:
+  - gxp-compliance
 
 news:
   releases:
