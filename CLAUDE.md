@@ -1053,6 +1053,12 @@ devtools::test()
 5. Follow roxygen2 conventions strictly
 6. Never break the two-level filtering semantics
 7. Keep receiver error handling resilient
+8. **ALWAYS regenerate contract documentation after modifying contracts:**
+   ```bash
+   Rscript dev/generate_contract_docs.R
+   ```
+   This extracts contracts from code and updates `inst/contracts.md`.
+   Run this after ANY changes to `require_that()`, `ensure_that()`, or `check_invariant()` calls in code.
 
 **Common pitfall to avoid:**
 - Don't add side effects to logger functions (they must be pure except for receiver calls)
