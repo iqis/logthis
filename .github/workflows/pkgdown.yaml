@@ -31,6 +31,9 @@ jobs:
         run: |
           docker run --rm -v $PWD:/workspace -w /workspace logthis-dev bash -c "
             cd logthis
+            ls -la
+            pwd
+            test -f DESCRIPTION && echo 'DESCRIPTION found' || echo 'DESCRIPTION not found'
             Rscript -e 'pkgdown::build_site()'
           "
 
