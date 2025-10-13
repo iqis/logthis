@@ -43,7 +43,7 @@
 │ Layer 2: EXTRACTED   │  │ Layer 2: CURATED    │
 │ (Auto-Generated)     │  │ (Manual)            │
 │ ──────────────────── │  │ ─────────────────── │
-│ inst/contracts.md    │  │ notes/CLAUDE.md     │
+│ inst/contracts.md    │  │ CLAUDE.md     │
 │ - From: R/*.R        │  │ - Architecture      │
 │ - Tool: generate_    │  │ - Patterns          │
 │   contract_docs.R    │  │ - Gotchas           │
@@ -95,9 +95,11 @@
 
 | File | Purpose | When to Update | Content Type |
 |------|---------|---------------|--------------|
-| `notes/CLAUDE.md` | Complete architecture, patterns, gotchas | When architecture or patterns change | WHY and HOW (not WHAT - that's in code) |
+| `CLAUDE.md` | Complete architecture, patterns, gotchas | When architecture or patterns change | WHY and HOW (not WHAT - that's in code) |
 
 **Rule**: Describes concepts, not specific function signatures. Links to code for details.
+
+**Note**: `CLAUDE.md` is at repository root (auto-read by Claude Code on initialization).
 
 ---
 
@@ -141,7 +143,7 @@ logger <- function(void = FALSE) {
 
 **Described in**:
 ```markdown
-# notes/CLAUDE.md (CURATED)
+# CLAUDE.md (CURATED)
 ### Logger Creation
 Loggers use closure pattern for immutability...
 **Example**: See `R/logger.R` for full implementation
@@ -202,7 +204,7 @@ This AUTO-GENERATES in `inst/contracts.md`:
 
 #### Step 4: Update Curated Guide (if architecture changed)
 ```markdown
-# notes/CLAUDE.md
+# CLAUDE.md
 ### Logger Configuration Functions
 ... (add with_timeout to list)
 ```
@@ -228,7 +230,7 @@ find R/ -name "*.R" -newer inst/contracts.md
 Rscript dev/generate_contract_docs.R
 ```
 
-### Is notes/CLAUDE.md accurate?
+### Is CLAUDE.md accurate?
 
 Manual review needed. Check:
 1. Architecture diagrams match code
@@ -252,7 +254,7 @@ Check:
 
 - **Code** (`R/receiver-core.R`): Enforced in `receiver()` constructor
 - **Contract** (`inst/contracts.md`): Listed as postcondition
-- **Curated** (`notes/CLAUDE.md`): Explained WHY (enables chaining)
+- **Curated** (`CLAUDE.md`): Explained WHY (enables chaining)
 - **Navigation** (`inst/AI.md`): Listed in gotchas with link to code
 
 **Reason**: Different audiences need different views. But all point to SAME source.
@@ -266,7 +268,7 @@ Check:
 # inst/AI.md
 logger() accepts void parameter of type logical, defaults to FALSE
 
-# notes/CLAUDE.md
+# CLAUDE.md
 Function logger(void = FALSE) takes a logical parameter
 ```
 
@@ -275,7 +277,7 @@ Function logger(void = FALSE) takes a logical parameter
 # inst/AI.md
 **See**: `R/logger.R:logger()` - Creates logger instance
 
-# notes/CLAUDE.md
+# CLAUDE.md
 Loggers are created with `logger()` function.
 **Signature**: See `R/logger.R` for details
 ```
@@ -291,13 +293,13 @@ Loggers are created with `logger()` function.
 - [ ] Run: `Rscript dev/generate_contract_docs.R`
 - [ ] Run: `devtools::document()` (for roxygen)
 - [ ] Run: `devtools::test()` (verify specs)
-- [ ] If architecture changed: Update `notes/CLAUDE.md`
+- [ ] If architecture changed: Update `CLAUDE.md`
 - [ ] If file structure changed: Update `inst/AI.md`
 
 ### Monthly review
 
 - [ ] Check for stale `inst/contracts.md` (regenerate if needed)
-- [ ] Verify `notes/CLAUDE.md` architecture diagrams
+- [ ] Verify `CLAUDE.md` architecture diagrams
 - [ ] Verify `inst/AI.md` decision trees still valid
 - [ ] Check all cross-links work
 
@@ -327,7 +329,7 @@ Loggers are created with `logger()` function.
 
 1. **Start with**: `inst/AI.md` (navigation index)
 2. **For specific function**: Check `inst/contracts.md` (auto-generated spec)
-3. **For architecture**: Read `notes/CLAUDE.md` (curated guide)
+3. **For architecture**: Read `CLAUDE.md` (curated guide)
 4. **For ground truth**: Always read `R/*.R` files (source of truth)
 
 ### When modifying logthis code:
@@ -335,14 +337,14 @@ Loggers are created with `logger()` function.
 1. **Before**: Read contracts in `inst/contracts.md`
 2. **During**: Add contracts to `R/*.R` file
 3. **After**: Regenerate `inst/contracts.md`
-4. **If needed**: Update `notes/CLAUDE.md` (architecture) or `inst/AI.md` (navigation)
+4. **If needed**: Update `CLAUDE.md` (architecture) or `inst/AI.md` (navigation)
 
 ### If you find discrepancy:
 
 1. **Trust**: Code in `R/*.R`
 2. **Verify**: Tests in `tests/testthat/`
 3. **Fix**: Regenerate `inst/contracts.md`
-4. **Update**: `notes/CLAUDE.md` or `inst/AI.md` if needed
+4. **Update**: `CLAUDE.md` or `inst/AI.md` if needed
 
 ---
 
@@ -350,7 +352,7 @@ Loggers are created with `logger()` function.
 
 - **"Where is the source of truth for X?"** → Code in `R/*.R` or tests in `tests/testthat/`
 - **"Can I edit inst/contracts.md?"** → NO. Regenerate from code.
-- **"When to update notes/CLAUDE.md?"** → When architecture/patterns change, not function signatures.
+- **"When to update CLAUDE.md?"** → When architecture/patterns change, not function signatures.
 - **"What if code and docs disagree?"** → Code wins. Update docs.
 
 ---

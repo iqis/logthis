@@ -48,7 +48,7 @@ logger <- function(void = FALSE) {
 ```
 1. SOURCE OF TRUTH: R/*.R (code with contracts)
 2a. EXTRACTED DOCS: inst/contracts.md (auto-generated)
-2b. CURATED GUIDES: notes/CLAUDE.md (WHY and HOW)
+2b. CURATED GUIDES: CLAUDE.md (WHY and HOW)
 3. NAVIGATION INDEX: inst/AI.md (decision trees, cross-links)
 ```
 
@@ -132,7 +132,7 @@ Rscript dev/generate_contract_docs.R
 
 1. Start: `inst/AI.md` (decision trees, quick reference)
 2. Contracts: `inst/contracts.md` (what functions require/guarantee)
-3. Architecture: `notes/CLAUDE.md` (why things work this way)
+3. Architecture: `CLAUDE.md` (why things work this way)
 4. Ground truth: `R/*.R` (implementation)
 
 ### Modifying Code
@@ -145,7 +145,7 @@ Rscript dev/generate_contract_docs.R
 ### When Confused
 
 - **"What does this function do?"** → Check `inst/contracts.md`
-- **"Why is it designed this way?"** → See `notes/CLAUDE.md`
+- **"Why is it designed this way?"** → See `CLAUDE.md`
 - **"Where do I add feature X?"** → Use decision trees in `inst/AI.md`
 - **"What's the ground truth?"** → Always `R/*.R` files
 
@@ -167,7 +167,7 @@ devtools::test()
 
 ### When Architecture Changes
 ```markdown
-# Update notes/CLAUDE.md
+# Update CLAUDE.md
 - Architecture diagrams
 - Design patterns
 - Key concepts

@@ -9,7 +9,7 @@
 
 ## Essential Links
 
-- **Comprehensive Guide**: [`notes/CLAUDE.md`](../notes/CLAUDE.md) - Complete architecture, patterns, gotchas
+- **Comprehensive Guide**: [`CLAUDE.md`](../CLAUDE.md) - Complete architecture, patterns, gotchas (auto-read by Claude Code)
 - **Function Contracts**: [`inst/contracts.md`](contracts.md) - Auto-generated from code (single source of truth)
 - **Examples**: [`vignettes/`](../logthis/vignettes/) - Usage patterns in context
 - **Tests**: [`tests/testthat/`](../logthis/tests/testthat/) - Executable specifications
@@ -47,7 +47,7 @@ Event → Logger Middleware → Logger Filter → Apply Logger Tags →
   └─ Receiver N Middleware → Receiver N Filter → Output N
 ```
 
-**Details**: [`notes/CLAUDE.md#Architecture`](../notes/CLAUDE.md#architecture--key-concepts)
+**Details**: [`CLAUDE.md#Architecture`](../CLAUDE.md#architecture--key-concepts)
 
 ---
 
@@ -343,7 +343,7 @@ with_receivers_bad <- function(logger, ...) {
 
 **Fix**: Always convert: `as.numeric(event$level_number)`
 
-**See**: [`notes/CLAUDE.md#8-critical-level_number-serialization`](../notes/CLAUDE.md#8-critical-level_number-serialization)
+**See**: [`CLAUDE.md#8-critical-level_number-serialization`](../CLAUDE.md#8-critical-level_number-serialization)
 
 ---
 
@@ -383,7 +383,7 @@ with_receivers_bad <- function(logger, ...) {
 1. **Preserve patterns**: Follow [Common Patterns](#common-patterns-copy-paste-templates)
 2. **Add contracts**: Use `require_that()`, `ensure_that()`, `check_invariant()`
 3. **Update tests**: Add tests to relevant `test-*.R` file
-4. **Check cross-refs**: Update [`notes/CLAUDE.md`](../notes/CLAUDE.md) if architecture changes
+4. **Check cross-refs**: Update [`CLAUDE.md`](../CLAUDE.md) if architecture changes
 
 ### After Modifying Code
 
@@ -401,7 +401,7 @@ with_receivers_bad <- function(logger, ...) {
 1. **Code** (`R/*.R`) - Always correct by definition
 2. **Tests** (`tests/testthat/`) - Executable specs
 3. **Contracts** (`inst/contracts.md`) - Generated from code (regenerate if stale)
-4. **Comprehensive Guide** (`notes/CLAUDE.md`) - Manual curation (update when architecture changes)
+4. **Comprehensive Guide** (`CLAUDE.md`) - Manual curation (update when architecture changes, auto-read by Claude Code)
 5. **This file** (`inst/AI.md`) - Navigation index (update when structure changes)
 
 ### If You Find a Discrepancy
@@ -418,7 +418,7 @@ with_receivers_bad <- function(logger, ...) {
 - **Not sure where to look?** Use decision trees above
 - **Contract violation?** Check [`inst/contracts.md`](contracts.md)
 - **Test failing?** See test file for specification
-- **Need more context?** See [`notes/CLAUDE.md`](../notes/CLAUDE.md)
+- **Need more context?** See [`CLAUDE.md`](../CLAUDE.md)
 - **Found a bug?** Report at [github.com/iqis/logthis/issues](https://github.com/iqis/logthis/issues)
 
 ---
