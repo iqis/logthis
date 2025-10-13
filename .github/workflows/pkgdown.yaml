@@ -27,16 +27,15 @@ jobs:
       - name: Build devcontainer
         run: docker build -f .devcontainer/Dockerfile -t logthis-dev .
 
+      - name: Test Docker mount
+        run: |
+          echo "Testing simple mount..."
+          docker run --rm -v $PWD:/test alpine ls -la /test
+
       - name: Build pkgdown site in devcontainer
         run: |
-          docker run --rm -v $PWD:/workspace -w /workspace logthis-dev bash -c "
-            echo 'Contents of /workspace:' &&
-            ls -la /workspace &&
-            echo 'Changing to logthis...' &&
-            cd logthis &&
-            echo 'Contents of logthis:' &&
-            ls -la &&
-            Rscript -e 'pkgdown::build_site_github_pages(new_process = FALSE, install = TRUE)'
+          docker run --rm -v "$PWD:/workspace:ro" -w /workspace logthis-dev bash -c "
+            ls -la && cd logthis && Rscript -e 'pkgdown::build_site_github_pages(new_process = FALSE, install = TRUE)'
           "
 
       - name: Upload artifact
