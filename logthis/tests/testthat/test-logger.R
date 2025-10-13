@@ -70,30 +70,19 @@ test_that("logger()() can map receivers to event and return event for chaining",
 })
 
 
-test_that("with_receivers() can guard logger and receiver types", {
+test_that("with_receivers() validates inputs via contracts", {
+    # Contracts enforce validation - see test-contracts.R for comprehensive tests
+    # Just verify contracts are active
 
     expect_error({
         fake_lgr <- function() NULL
-        fake_lgr %>%
-            with_receivers()
-    })
+        fake_lgr %>% with_receivers()
+    }, "Precondition failed")
 
     expect_warning({
         real_lgr <- logger()
-        real_lgr %>%
-            with_receivers() # empty `...`
+        real_lgr %>% with_receivers() # empty `...`
     })
-
-    expect_error({
-        real_lgr <- logger()
-        fake_rcvrs <- list(list(function(){"a"},
-                                function(){"b"},
-                                function(){"c"}),
-                           function(){"d"})
-        real_lgr %>%
-            with_receivers(fake_rcvrs)
-    })
-
 })
 
 
@@ -148,53 +137,26 @@ test_that("with_receivers() overwrites logger's receivers when `append` = FALSE"
 })
 
 
-test_that("with_limits() can guard logger, lower and upper types & values",{
+test_that("with_limits() validates inputs via contracts", {
+    # Contracts enforce validation - see test-contracts.R for comprehensive tests
+    # Just verify valid usage works and contracts catch basic errors
 
-    logger() %>%
-        with_limits(0, 100)
-
-    logger() %>%
-        with_limits(LOWEST,
-                    HIGHEST)
-
-
-    expect_error({
-        fake_lgr <- function() NULL
-        fake_lgr %>%
-            with_limits()
+    expect_no_error({
+        logger() %>% with_limits(LOWEST, HIGHEST)
     })
 
     expect_no_error({
-        logger() %>%
-            with_limits()
+        logger() %>% with_limits(0, 100)
     })
+
+    # Contract should catch invalid inputs
+    expect_error({
+        logger() %>% with_limits(-1, 100)
+    }, "Precondition failed")
 
     expect_error({
-        logger() %>%
-            with_limits("foo",
-                        list())
-
-    })
-
-    # must be within [0, 119] (lower)
-    # must be within [1, 120] (upper)
-    expect_error({
-        logger() %>%
-            with_limits(-1,
-                        0)
-    })
-
-    expect_error({
-        logger() %>%
-            with_limits(120,
-                        121)
-    })
-
-    expect_error({
-        logger() %>%
-            with_limits(1,
-                        LOWEST)
-    })
+        logger() %>% with_limits(50, 10)
+    }, "Precondition failed")
 })
 
 test_that("logger chaining works correctly", {
