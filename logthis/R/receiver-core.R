@@ -32,21 +32,28 @@
 #' })
 #' }
 receiver <- function(func) {
-  if (!is.function(func)) {
-    stop("Receiver must be a function")
-  }
+  # PRECONDITIONS: Validate input
+  require_that(
+    "func must be function" = is.function(func)
+  )
 
   args <- formals(func)
 
-  if (length(args) != 1) {
-    stop("Receiver function must have exactly one argument, got ", length(args))
-  }
+  # PRECONDITIONS: Validate function signature
+  require_that(
+    "receiver must have exactly one argument" = length(args) == 1,
+    "receiver argument must be named event" = names(args)[1] == "event"
+  )
 
-  if (names(args)[1] != "event") {
-    stop("Receiver function argument must be named 'event', got '", names(args)[1], "'")
-  }
+  result <- structure(func, class = c("log_receiver", "function"))
 
-  structure(func, class = c("log_receiver", "function"))
+  # POSTCONDITION: Ensure result is valid receiver
+  ensure_that(
+    "result is log_receiver" = inherits(result, "log_receiver"),
+    "result is function" = is.function(result)
+  )
+
+  result
 }
 
 # ============================================================================

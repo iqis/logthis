@@ -36,15 +36,18 @@
 #' memory issues. Functions, environments, and very large objects will error.
 log_event_level <- function(level_class, level_number){
 
-  `if`(!is.character(level_class),
-       stop("level_class must be character."))
-
-  `if`(missing(level_class) | is.null(level_class) | is.na(level_class) | level_class == "",
-       stop("level_class must be non empty."))
+  # PRECONDITIONS: Validate inputs
+  require_that(
+    "level_class must be character" = is.character(level_class),
+    "level_class must not be missing" = !missing(level_class),
+    "level_class must not be null" = !is.null(level_class),
+    "level_class must not be NA" = !is.na(level_class),
+    "level_class must not be empty" = level_class != ""
+  )
 
   level_number <- make_level_number(level_number, validate = TRUE)
 
-  structure(
+  result <- structure(
     function(message = "", ...){
       # Capture custom fields
       custom_fields <- list(...)
@@ -113,6 +116,18 @@ log_event_level <- function(level_class, level_number){
     level_class = level_class,
     class = c("log_event_level",
               "function"))
+
+  # POSTCONDITION: Ensure result is valid log_event_level
+  ensure_that(
+    "result is log_event_level" = inherits(result, "log_event_level"),
+    "result is function" = is.function(result),
+    "result has level_number attribute" = !is.null(attr(result, "level_number")),
+    "result has level_class attribute" = !is.null(attr(result, "level_class")),
+    "level_number is in valid range" =
+      attr(result, "level_number") >= 0 && attr(result, "level_number") <= 100
+  )
+
+  result
 }
 
 #' Extract and normalize level number from log_event_level or numeric values

@@ -41,7 +41,7 @@
 #' }
 #'
 logger <- function(){
-  structure(function(event, ...){
+  result <- structure(function(event, ...){
 
     config <- attr(sys.function(),
                    "config")
@@ -124,6 +124,22 @@ logger <- function(){
                 receiver_names = character(0),
                 tags = NULL,
                 middleware = list()))
+
+  # POSTCONDITIONS: Ensure logger is properly constructed
+  ensure_that(
+    "result is logger class" = inherits(result, "logger"),
+    "result is function" = is.function(result),
+    "result has config" = !is.null(attr(result, "config")),
+    "config has limits" = !is.null(attr(result, "config")$limits),
+    "config has receivers list" = is.list(attr(result, "config")$receivers),
+    "limits are valid" =
+      attr(result, "config")$limits$lower >= 0 &&
+      attr(result, "config")$limits$lower <= 99 &&
+      attr(result, "config")$limits$upper >= 1 &&
+      attr(result, "config")$limits$upper <= 100
+  )
+
+  result
 }
 
 #' @export
@@ -669,9 +685,13 @@ with_tags.log_event_level <- function(x, ..., append = TRUE){
 #' @rdname with_tags
 with_tags.logger <- function(x, ..., append = TRUE){
   logger <- x
-  if (!inherits(logger, "logger")) {
-    stop("Argument `logger` must be of type 'logger'. ")
-  }
+
+  # PRECONDITIONS: Validate inputs
+  require_that(
+    "logger must be logger class" = inherits(logger, "logger"),
+    "append must be logical" = is.logical(append),
+    "append must have length 1" = length(append) == 1
+  )
 
   # Validate tags before unlisting to catch type errors
   tag_list <- list(...)
@@ -680,11 +700,11 @@ with_tags.logger <- function(x, ..., append = TRUE){
     return(logger)
   }
 
-  # Check each tag is character before unlisting (to prevent coercion)
-  for (tag in tag_list) {
-    if (!is.character(tag)) {
-      stop("Argument `...` (tags) must be of type 'character'")
-    }
+  # PRECONDITION: Check each tag is character
+  for (i in seq_along(tag_list)) {
+    require_that(
+      paste("tag", i, "must be character") = is.character(tag_list[[i]])
+    )
   }
 
   tags <- unlist(tag_list)
@@ -696,6 +716,12 @@ with_tags.logger <- function(x, ..., append = TRUE){
     config$tags <- tags
   }
   attr(logger, "config") <- config
+
+  # POSTCONDITION: Ensure result is valid logger with tags
+  ensure_that(
+    "result is logger" = inherits(logger, "logger"),
+    "tags are character" = is.null(config$tags) || is.character(config$tags)
+  )
 
   logger
 }
@@ -874,17 +900,20 @@ with_middleware <- function(x, ...) {
 #' @rdname with_middleware
 with_middleware.logger <- function(x, ...) {
   logger <- x
+
+  # PRECONDITIONS: Validate inputs
+  require_that(
+    "logger must be logger class" = inherits(logger, "logger")
+  )
+
   middleware_fns <- list(...)
 
-  # Validate all are functions
+  # PRECONDITION: Validate all are functions
   for (i in seq_along(middleware_fns)) {
     mw <- middleware_fns[[i]]
-    if (!is.function(mw)) {
-      stop("`with_middleware()` requires function arguments. ",
-           "Argument ", i, " is <", class(mw)[1], ">.\n",
-           "  Solution: Pass functions created with middleware() or plain functions\n",
-           "  Example: with_middleware(middleware(function(event) event), ...)")
-    }
+    require_that(
+      paste("middleware", i, "must be function") = is.function(mw)
+    )
   }
 
   # Get logger config and add middleware
@@ -894,5 +923,14 @@ with_middleware.logger <- function(x, ...) {
 
   # Return logger with updated config
   attr(logger, "config") <- config
+
+  # POSTCONDITION: Ensure result is valid logger
+  ensure_that(
+    "result is logger" = inherits(logger, "logger"),
+    "middleware is list" = is.list(config$middleware),
+    "all middleware are functions" =
+      all(vapply(config$middleware, is.function, logical(1)))
+  )
+
   logger
 }
