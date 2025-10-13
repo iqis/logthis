@@ -1,6 +1,7 @@
 FROM rocker/tidyverse:latest
 
 # Install system dependencies including wget for Claude Code CLI, netcat for health checks, and AWS CLI
+# Also install pkgdown build dependencies (documentation generation)
 RUN apt-get update && apt-get install -y \
     wget \
     netcat-openbsd \
@@ -8,6 +9,17 @@ RUN apt-get update && apt-get install -y \
     unzip \
     sudo \
     gpg \
+    libcurl4-openssl-dev \
+    libfontconfig1-dev \
+    libfreetype6-dev \
+    libxml2-dev \
+    libharfbuzz-dev \
+    libfribidi-dev \
+    libpng-dev \
+    libtiff5-dev \
+    libjpeg-dev \
+    libwebp-dev \
+    pandoc \
     && rm -rf /var/lib/apt/lists/*
 
 # Install GitHub CLI (gh)
