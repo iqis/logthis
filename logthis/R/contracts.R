@@ -11,6 +11,50 @@
 #' - Are AI-readable without parsing roxygen comments
 #' - Serve as single source of truth for function specifications
 #'
+#' @section Contract Types and Control:
+#' Contracts can be independently enabled/disabled by type:
+#'
+#' - **Preconditions** (`require_that()`): Validate caller inputs
+#'   - Control: `options(logthis.contracts.preconditions = FALSE)`
+#'   - Use case: Disable in production for performance (trust validated inputs)
+#'
+#' - **Postconditions** (`ensure_that()`): Verify function correctness
+#'   - Control: `options(logthis.contracts.postconditions = FALSE)`
+#'   - Use case: Keep enabled in production to catch implementation bugs
+#'
+#' - **Invariants** (`check_invariant()`): Verify internal consistency
+#'   - Control: `options(logthis.contracts.invariants = FALSE)`
+#'   - Use case: Disable in hot paths, keep in critical operations
+#'
+#' - **Performance** (`with_performance_contract()`): Measure/enforce timing
+#'   - Control: `options(logthis.contracts.performance = FALSE)`
+#'   - Use case: Disable measurements in production, enable in testing
+#'
+#' @section Production Configuration Examples:
+#' ```r
+#' # Defensive: Trust inputs, verify correctness
+#' options(logthis.contracts.preconditions = FALSE)  # Performance gain
+#' # postconditions still enabled (default TRUE)
+#'
+#' # High-assurance: Always verify results
+#' options(logthis.contracts.postconditions = TRUE)  # Force on
+#'
+#' # Performance-critical: Minimal checking
+#' options(
+#'   logthis.contracts.preconditions = FALSE,
+#'   logthis.contracts.invariants = FALSE,
+#'   logthis.contracts.postconditions = TRUE  # Keep final verification
+#' )
+#'
+#' # Disable everything
+#' options(
+#'   logthis.contracts.preconditions = FALSE,
+#'   logthis.contracts.postconditions = FALSE,
+#'   logthis.contracts.invariants = FALSE,
+#'   logthis.contracts.performance = FALSE
+#' )
+#' ```
+#'
 #' @section Contract Registry:
 #' All contracts are automatically registered for internal introspection.
 #' The registry is used by dev/generate_contract_docs.R to extract
@@ -105,8 +149,11 @@ get_function_contracts <- function(fn_name) {
 #'
 #' Validates function inputs. Failures indicate caller error.
 #'
+#' Control preconditions independently with:
+#' `options(logthis.contracts.preconditions = FALSE)`
+#'
 #' @param ... Named logical conditions to check
-#' @param .enabled Whether to enforce (default: getOption("logthis.contracts", TRUE))
+#' @param .enabled Whether to enforce (default: getOption("logthis.contracts.preconditions", TRUE))
 #' @param .calling_fn Name of calling function (auto-detected if NULL)
 #'
 #' @return Invisible NULL if all pass, otherwise stops with descriptive error
@@ -121,9 +168,12 @@ get_function_contracts <- function(fn_name) {
 #'   # ... rest of function
 #' }
 #'
+#' # Disable preconditions for performance
+#' options(logthis.contracts.preconditions = FALSE)
+#'
 #' @export
 require_that <- function(...,
-                        .enabled = getOption("logthis.contracts", TRUE),
+                        .enabled = getOption("logthis.contracts.preconditions", TRUE),
                         .calling_fn = NULL) {
   .check_contract(
     conditions = list(...),
@@ -145,8 +195,11 @@ require_that <- function(...,
 #'
 #' Validates function outputs and object state. Failures indicate bugs.
 #'
+#' Control postconditions independently with:
+#' `options(logthis.contracts.postconditions = FALSE)`
+#'
 #' @param ... Named logical conditions to check
-#' @param .enabled Whether to enforce (default: getOption("logthis.contracts", TRUE))
+#' @param .enabled Whether to enforce (default: getOption("logthis.contracts.postconditions", TRUE))
 #' @param .calling_fn Name of calling function (auto-detected if NULL)
 #'
 #' @return Invisible NULL if all pass, otherwise stops with BUG error
@@ -167,9 +220,12 @@ require_that <- function(...,
 #'   result
 #' }
 #'
+#' # Keep postconditions on in production to catch bugs
+#' options(logthis.contracts.postconditions = TRUE)
+#'
 #' @export
 ensure_that <- function(...,
-                       .enabled = getOption("logthis.contracts", TRUE),
+                       .enabled = getOption("logthis.contracts.postconditions", TRUE),
                        .calling_fn = NULL) {
   .check_contract(
     conditions = list(...),
@@ -194,8 +250,11 @@ ensure_that <- function(...,
 #' Validates object state that must always hold true.
 #' Can be called at any point to verify internal consistency.
 #'
+#' Control invariants independently with:
+#' `options(logthis.contracts.invariants = FALSE)`
+#'
 #' @param ... Named logical conditions to check
-#' @param .enabled Whether to enforce (default: getOption("logthis.contracts", TRUE))
+#' @param .enabled Whether to enforce (default: getOption("logthis.contracts.invariants", TRUE))
 #' @param .calling_fn Name of calling function (auto-detected if NULL)
 #'
 #' @return Invisible NULL if all pass, otherwise stops with INVARIANT error
@@ -219,9 +278,12 @@ ensure_that <- function(...,
 #'   new_logger
 #' }
 #'
+#' # Disable invariants in performance-critical code
+#' options(logthis.contracts.invariants = FALSE)
+#'
 #' @export
 check_invariant <- function(...,
-                           .enabled = getOption("logthis.contracts", TRUE),
+                           .enabled = getOption("logthis.contracts.invariants", TRUE),
                            .calling_fn = NULL) {
   .check_contract(
     conditions = list(...),
@@ -262,7 +324,7 @@ check_invariant <- function(...,
 assert_type <- function(x,
                         type,
                         allow_null = FALSE,
-                        .enabled = getOption("logthis.contracts", TRUE)) {
+                        .enabled = getOption("logthis.contracts.preconditions", TRUE)) {
   if (!.enabled) return(invisible(NULL))
 
   var_name <- deparse(substitute(x))
@@ -308,7 +370,7 @@ assert_type <- function(x,
 assert_range <- function(x,
                          min = -Inf,
                          max = Inf,
-                         .enabled = getOption("logthis.contracts", TRUE)) {
+                         .enabled = getOption("logthis.contracts.preconditions", TRUE)) {
   if (!.enabled) return(invisible(NULL))
 
   var_name <- deparse(substitute(x))
@@ -353,7 +415,7 @@ assert_length <- function(x,
                           n = NULL,
                           min = 1,
                           max = Inf,
-                          .enabled = getOption("logthis.contracts", TRUE)) {
+                          .enabled = getOption("logthis.contracts.preconditions", TRUE)) {
   if (!.enabled) return(invisible(NULL))
 
   var_name <- deparse(substitute(x))
@@ -380,6 +442,9 @@ assert_length <- function(x,
 #'
 #' Documents and optionally enforces performance characteristics.
 #' Useful for regression testing and AI understanding of complexity.
+#'
+#' Control performance contracts independently with:
+#' `options(logthis.contracts.performance = FALSE)`
 #'
 #' @param operation_name Human-readable operation description
 #' @param expr Expression to time
@@ -413,7 +478,7 @@ with_performance_contract <- function(operation_name,
                                       expr,
                                       max_seconds = Inf,
                                       log_to = NULL,
-                                      .enabled = getOption("logthis.contracts", TRUE)) {
+                                      .enabled = getOption("logthis.contracts.performance", TRUE)) {
   if (!.enabled) return(eval.parent(substitute(expr)))
 
   start_time <- Sys.time()

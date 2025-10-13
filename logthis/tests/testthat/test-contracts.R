@@ -272,17 +272,36 @@ test_that("log_event_level() postcondition validates range", {
 # Contract Disable Tests
 # ------------------------------------------------------------------------------
 
-test_that("contracts can be disabled globally", {
+test_that("contracts can be disabled by type", {
+  # Test disabling preconditions only
   withr::with_options(
-    list(logthis.contracts = FALSE),
+    list(logthis.contracts.preconditions = FALSE),
     {
-      # These would normally fail preconditions
-      # But with contracts disabled, they pass through
+      # Preconditions are disabled, postconditions still run
+      result <- logger()
+      expect_s3_class(result, "logger")
+    }
+  )
 
-      # Note: Some may still fail due to other validation logic
-      # This tests that contracts specifically are disabled
+  # Test disabling postconditions only
+  withr::with_options(
+    list(logthis.contracts.postconditions = FALSE),
+    {
+      # Postconditions are disabled, preconditions still run
+      result <- logger()
+      expect_s3_class(result, "logger")
+    }
+  )
 
-      # This tests the .enabled parameter works
+  # Test disabling all contracts
+  withr::with_options(
+    list(
+      logthis.contracts.preconditions = FALSE,
+      logthis.contracts.postconditions = FALSE,
+      logthis.contracts.invariants = FALSE
+    ),
+    {
+      # All contracts disabled
       result <- logger()
       expect_s3_class(result, "logger")
     }
