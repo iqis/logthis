@@ -27,17 +27,10 @@ jobs:
       - name: Build devcontainer
         run: docker build -f .devcontainer/Dockerfile -t logthis-dev .
 
-      - name: Debug directory structure
-        run: |
-          echo "PWD: $PWD"
-          ls -la
-          ls -la logthis/ || echo "No logthis directory"
-
       - name: Build pkgdown site in devcontainer
         run: |
-          docker run --rm -v $PWD:/workspace -w /workspace/logthis logthis-dev bash -c "
-            pwd
-            ls -la
+          docker run --rm -v $PWD:/workspace -w /workspace logthis-dev bash -c "
+            cd logthis &&
             Rscript -e 'pkgdown::build_site_github_pages(new_process = FALSE, install = TRUE)'
           "
 
