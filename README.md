@@ -256,15 +256,28 @@ to_email(to = "alerts@example.com", smtp_settings = ...)
 
 ## Learn More
 
-Detailed guides and advanced techniques:
-
+### 📖 Fundamentals
 - **[Getting Started](articles/getting-started.html)** - Basic setup and usage patterns
-- **[GxP Compliance & Pharmaceutical Logging](articles/gxp-compliance.html)** - 21 CFR Part 11 compliance and ALCOA+ audit trails
-- **[Patterns](articles/patterns.html)** - Advanced patterns: middleware, logger chaining, architecture
-- **[Advanced Receivers](articles/advanced-receivers.html)** - Custom receivers, async logging, buffering
+- **[Patterns](articles/patterns.html)** - Common logging patterns and best practices
 - **[Tagging and Provenance](articles/tagging-and-provenance.html)** - Track data lineage and execution context
-- **[Python Comparison](articles/python-comparison.html)** - Comparison with Python logging
+
+### 🚀 Advanced Topics
+- **[Middleware](articles/middleware.html)** - Transform events with middleware (PII redaction, sampling, enrichment)
+- **[Shiny Logging](articles/shiny-logging.html)** - User-facing alerts, session tracking, reactive debugging
+- **[Package Development](articles/package-development.html)** - Integrate logthis into R packages
+- **[Advanced Receivers](articles/advanced-receivers.html)** - Custom receivers, async logging, buffering
+
+### ⚡ Operations
+- **[Performance](articles/performance.html)** - Optimization, benchmarking, high-throughput strategies
+- **[Production Deployment](articles/production.html)** - Centralized logging, rotation, retention, security
+
+### 🏥 Special Topics
+- **[GxP Compliance](articles/gxp-compliance.html)** - 21 CFR Part 11 compliance and ALCOA+ audit trails
+- **[Python Comparison](articles/python-comparison.html)** - Comparison with Python logging ecosystem
 - **[Migration Guide](articles/migration-guide.html)** - Migrate from other logging packages
+
+### 🤖 Tools
+- **[AI Integration Guide](articles/ai-integration.html)** - AI-assisted logthis integration for any project
 - **[Function Reference](reference/index.html)** - Complete API documentation
 
 ## Use Cases
