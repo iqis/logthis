@@ -42,6 +42,15 @@ renv/staging/
 *~
 \#*\#
 .\#*
+*.backup
+*.bak
+
+# Temporary helper scripts
+create_lean_readme.py
+reorganize_readme.py
+
+# Generated favicon files (pkgdown)
+*/pkgdown/favicon/
 
 # Scratch notes and one-off test scripts
 scratch.md
