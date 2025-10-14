@@ -1,91 +1,50 @@
-# logthis 0.1.0.9000
-
-## New Features
-
-### Core Functionality
-* Implemented `with_tags.log_event_level()` for auto-tagging custom event levels
-  - Only custom levels can be tagged (built-in levels protected)
-  - Adds `.BUILTIN_LEVELS` constant to prevent modification of standard levels
-* Fixed Shiny level-to-type mapping with efficient lookup table (`.SHINY_TYPE_MAP`)
-  - `get_shiny_type()` helper for mapping log levels to Shiny alert/notification types
-
-### File & Format Receivers
-* **CSV logging**: `to_csv()` formatter with proper field escaping
-  - Supports custom separator, quote character, and headers
-  - Tags stored as pipe-delimited strings
-* **Parquet logging**: `to_parquet()` formatter for columnar storage
-  - Requires `arrow` package
-  - Buffered writes with configurable `flush_threshold`
-  - Tags and custom fields stored as list columns
-* **Feather logging**: `to_feather()` formatter for fast read/write
-  - Requires `arrow` package
-  - Similar buffering support as Parquet
-
-### HTTP & Webhook Integration
-* **Generic webhook**: `on_webhook()` handler for HTTP POST to any endpoint
-  - Uses `httr2` for modern HTTP client
-  - Auto-detects content-type from formatter (JSON/text)
-  - Retry logic with configurable timeout and max attempts
-* **Microsoft Teams**: `to_teams()` standalone receiver with Adaptive Cards
-  - Full support for Power Automate webhooks
-  - Color-coded log levels in card display
-  - Metadata displayed as Facts in card body
-
-### System Integration
-* **Syslog**: `to_syslog()` receiver with RFC 3164/5424 support
-  - Multiple transports: UDP, TCP, UNIX socket
-  - Complete facility code mapping (kern, user, daemon, local0-7, etc.)
-  - Log level to syslog severity mapping (0-7 scale)
-  - Connection pooling with automatic reconnection
-
-### Async Logging (v0.2.0)
-* **Universal async wrapper**: `as_async()` makes ANY receiver asynchronous
-  - Works with all receivers: formatters, handlers, standalone receivers
-  - Pipe-friendly syntax: `to_text() %>% on_local("app.log") %>% as_async()`
-  - Requires `mirai` package for background execution
-  - Auto-initializes single daemon, supports daemon pools for parallel processing
-  - Buffering with configurable `flush_threshold` (default: 100 events)
-  - Backpressure handling with `max_queue_size` (default: 10000 events)
-  - Automatic cleanup via finalizers
-* **Alias**: `deferred()` as semantic alias for `as_async()`
-* **Performance**: 0.1-1ms latency to queue, 10k-50k events/sec throughput
-* **Use cases**: High-frequency logging, Shiny apps, non-blocking I/O
-
-### Architecture Improvements
-* **Buffered receivers**: New `requires_buffering` flag for columnar formats
-  - `.build_buffered_local_receiver()` for data frame accumulation
-  - `flush_threshold` parameter in `on_local()` for batch writes
-* **Null-coalescing operator**: Added `%||%` for cleaner default value handling
-
-## Documentation
-* Created comprehensive 20-page async logging research document
-  - Evaluated `future`, `mirai`, and `nanonext` packages
-  - Recommendation: `mirai` for v0.2.0 async implementation
-  - Performance benchmarks and implementation patterns documented
-* Updated README with all new receivers organized by category
-* Updated CLAUDE.md with new patterns (buffered formatters, standalone receivers, webhook handlers)
-* Created docs/implementation-decisions.md documenting architectural choices
-* Added 41 new tests for all receivers (total: 171+ tests passing)
-
-## Breaking Changes
-
-* None - all additions are backward compatible
-
-## Dependencies
-
-### New Suggests
-* `httr2` - for webhook and Teams receivers
-* `arrow` - for Parquet and Feather formatters
-* `mirai` - for async logging with `as_async()`
-* Removed `httr` (replaced by `httr2`)
-
-## Bug Fixes
-
-* Fixed `level_number` serialization in JSON output (convert S3 class to numeric)
-* Fixed Shiny type mapping edge cases with `findInterval()` approach
-
----
-
 # logthis 0.1.0
 
-* Initial CRAN submission (planned)
+## Initial CRAN Release
+
+### Core Features
+
+* **Hierarchical Event Levels**: 0-100 scale with pre-defined levels (TRACE, DEBUG, NOTE, MESSAGE, WARNING, ERROR, CRITICAL)
+* **Multiple Output Receivers**: Console, files (text, JSON, CSV, Parquet, Feather), cloud storage (AWS S3, Azure Blob), webhooks, email, syslog, Microsoft Teams
+* **Composable Design**: Pipe-based functional API for logger configuration
+* **Two-Level Filtering**: Independent filtering at logger and receiver levels
+* **Logger Chaining**: Chain multiple loggers together for complex routing
+* **Scope-Based Enhancement**: Add receivers within specific scopes without affecting parent loggers
+* **Tag-Based Organization**: Flexible tagging system for categorization and filtering
+
+### Advanced Features
+
+* **Middleware Pipeline**: Transform events with PII redaction, context enrichment, and sampling
+* **Async Logging**: Non-blocking logging with `as_async()` for cloud receivers
+* **Buffer Management**: Named receivers with manual flush control for batched cloud uploads
+* **Contract System**: Design-by-contract support with runtime validation
+* **Structured Events**: Rich metadata with timestamps, tags, and custom fields
+
+### Integration Features
+
+* **Shiny Integration**: Companion `logshiny` package with 7 receivers (alert panels, modals, toasts, browser console)
+* **Tidyverse Pipeline Logging**: Automatic audit trails for dplyr/tidyr transformations via tidylog integration
+* **GxP Validation**: 21 CFR Part 11 compliant audit trails for pharmaceutical applications
+* **Validation Framework Integration**: Built-in helpers for {validate}, {pointblank}, {arsenal} packages
+
+### AI-Forward Design
+
+* **Copy-Paste Integration Prompts**: 7 ready-to-use prompts for common use cases
+* **Self-Documenting API**: Consistent naming patterns (`to_*`, `on_*`, `with_*`)
+* **Comprehensive Documentation**: 7 vignettes covering all major use cases
+
+### Documentation
+
+* Professional pkgdown site: https://iqis.github.io/logthis/
+* 7 comprehensive vignettes
+* AI-assisted integration prompts in README
+
+### Testing
+
+* 14 test files with comprehensive coverage
+* GitHub Actions CI/CD pipeline
+* Codecov integration for test coverage tracking
+
+## Development
+
+Package developed with AI assistance using [Claude Code](https://claude.com/claude-code)
