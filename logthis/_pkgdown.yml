@@ -123,6 +123,18 @@ reference:
   - receiver
   - middleware
 
+- title: Contract System (Design by Contract)
+  desc: Executable specifications for runtime validation and AI-readable documentation
+  contents:
+  - contracts
+  - require_that
+  - ensure_that
+  - check_invariant
+  - assert_type
+  - assert_range
+  - assert_length
+  - with_performance_contract
+
 - title: S3 Methods
   desc: S3 method implementations (generally not called directly)
   contents:
