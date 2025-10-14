@@ -27,8 +27,7 @@ jobs:
 
       - name: Run R CMD check in devcontainer
         run: |
-          docker run --rm -v $PWD:/workspace -w /workspace logthis-dev bash -c "
-            cd logthis
+          docker run --rm -v $PWD:/workspace -w /workspace/logthis logthis-dev bash -c "
             R CMD build .
             R CMD check --as-cran *.tar.gz
           "
@@ -51,9 +50,8 @@ jobs:
 
       - name: Run R CMD check for logshiny in devcontainer
         run: |
-          docker run --rm -v $PWD:/workspace -w /workspace logthis-dev bash -c "
-            R CMD INSTALL logthis
-            cd logshiny
+          docker run --rm -v $PWD:/workspace -w /workspace/logshiny logthis-dev bash -c "
+            R CMD INSTALL /workspace/logthis
             R CMD build .
             R CMD check --as-cran *.tar.gz
           "

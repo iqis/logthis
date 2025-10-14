@@ -23,7 +23,6 @@ jobs:
 
       - name: Run test coverage in devcontainer
         run: |
-          docker run --rm -v $PWD:/workspace -w /workspace logthis-dev bash -c "
-            cd logthis
+          docker run --rm -v $PWD:/workspace -w /workspace/logthis logthis-dev bash -c "
             Rscript -e 'covr::codecov(quiet = FALSE, clean = FALSE)'
           "
