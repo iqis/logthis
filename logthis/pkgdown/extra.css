@@ -1,0 +1,635 @@
+/* ============================================================================
+   logthis Custom Theme - Warp-Inspired Light Design
+   Modern, clean, developer-focused aesthetic with light backgrounds
+   ============================================================================ */
+
+/* Root Variables - Clean Light Palette */
+:root {
+  /* Log level colors - vibrant but professional */
+  --color-trace: #6c757d;      /* Gray for TRACE/DEBUG */
+  --color-note: #0066cc;       /* Strong blue for NOTE */
+  --color-message: #0891b2;    /* Cyan for MESSAGE */
+  --color-warning: #f59e0b;    /* Amber for WARNING */
+  --color-error: #dc2626;      /* Red for ERROR */
+  --color-critical: #7c3aed;   /* Violet for CRITICAL */
+
+  /* Brand colors - light theme */
+  --logthis-primary: #0066cc;      /* Vibrant blue */
+  --logthis-accent: #dc2626;       /* Red accent */
+  --logthis-bg: #ffffff;           /* Pure white */
+  --logthis-bg-alt: #f8fafc;       /* Slight gray for contrast */
+  --logthis-border: #e2e8f0;       /* Subtle borders */
+  --logthis-text: #1e293b;         /* Dark slate text */
+  --logthis-text-muted: #64748b;   /* Muted text */
+
+  /* Code/terminal colors - light theme */
+  --logthis-code-bg: #f1f5f9;      /* Light gray for code */
+  --logthis-code-border: #cbd5e1;   /* Code border */
+  --logthis-terminal-bg: #0f172a;   /* Dark terminal (contrast) */
+}
+
+/* ============================================================================
+   Typography - Clean & Technical (Warp-inspired)
+   ============================================================================ */
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--logthis-text);
+  background-color: var(--logthis-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  color: var(--logthis-text);
+  margin-top: 2em;
+  margin-bottom: 0.75em;
+}
+
+h1 { font-size: 2.25em; font-weight: 700; }
+h2 { font-size: 1.875em; border-bottom: 2px solid var(--logthis-border); padding-bottom: 0.5em; }
+h3 { font-size: 1.5em; }
+h4 { font-size: 1.25em; }
+
+p {
+  margin-bottom: 1.25em;
+  line-height: 1.75;
+}
+
+code {
+  font-family: "SF Mono", "Roboto Mono", "Fira Code", "Courier New", monospace;
+  font-size: 0.875em;
+  background-color: var(--logthis-code-bg);
+  color: var(--color-error);
+  padding: 0.2em 0.5em;
+  border-radius: 4px;
+  border: 1px solid var(--logthis-code-border);
+  font-weight: 500;
+}
+
+/* ============================================================================
+   Code Blocks - Clean Light Background
+   ============================================================================ */
+
+pre {
+  background: var(--logthis-code-bg) !important;
+  border: 1px solid var(--logthis-code-border);
+  border-radius: 8px;
+  padding: 1.5em !important;
+  margin: 1.5em 0;
+  overflow-x: auto;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+}
+
+pre code {
+  background: transparent !important;
+  border: none !important;
+  color: var(--logthis-text) !important;
+  padding: 0;
+  font-size: 0.875em;
+  line-height: 1.7;
+  font-weight: 400;
+}
+
+/* Syntax highlighting - GitHub-style for light backgrounds */
+.sourceCode { background: var(--logthis-code-bg) !important; }
+.sourceCode .fu { color: #6f42c1; } /* functions - purple */
+.sourceCode .st { color: #032f62; } /* strings - dark blue */
+.sourceCode .co { color: #6a737d; font-style: italic; } /* comments - gray */
+.sourceCode .kw { color: #d73a49; } /* keywords - red */
+.sourceCode .dv { color: #005cc5; } /* numbers - blue */
+.sourceCode .op { color: #24292f; } /* operators */
+.sourceCode .va { color: #24292f; } /* variables */
+.sourceCode .cf { color: #d73a49; } /* control flow */
+
+/* ============================================================================
+   Navbar - Clean & Modern (Warp-inspired)
+   ============================================================================ */
+
+.navbar {
+  background: var(--logthis-bg) !important;
+  border-bottom: 1px solid var(--logthis-border);
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+  padding: 1rem 0;
+}
+
+.navbar-brand {
+  font-weight: 700;
+  font-size: 1.25em;
+  letter-spacing: -0.025em;
+  color: var(--logthis-text) !important;
+  transition: color 0.2s ease;
+}
+
+.navbar-brand:hover {
+  color: var(--logthis-primary) !important;
+}
+
+.nav-link {
+  color: var(--logthis-text-muted) !important;
+  font-weight: 500;
+  transition: color 0.2s ease;
+  padding: 0.5rem 1rem !important;
+  border-radius: 6px;
+}
+
+.nav-link:hover {
+  color: var(--logthis-primary) !important;
+  background-color: var(--logthis-bg-alt);
+}
+
+.navbar .nav-item.active .nav-link {
+  color: var(--logthis-primary) !important;
+  font-weight: 600;
+}
+
+/* ============================================================================
+   Buttons & Interactive Elements - Modern & Clean
+   ============================================================================ */
+
+.btn {
+  border-radius: 8px;
+  padding: 0.625rem 1.25rem;
+  font-weight: 600;
+  font-size: 0.9375em;
+  transition: all 0.15s ease;
+  border: none;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+}
+
+.btn-primary {
+  background: var(--logthis-primary);
+  color: white;
+}
+
+.btn-primary:hover {
+  background: #0052a3;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+/* ============================================================================
+   Cards & Panels - Clean Containers
+   ============================================================================ */
+
+.card {
+  border: 1px solid var(--logthis-border);
+  border-radius: 12px;
+  background: var(--logthis-bg);
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+  transition: all 0.2s ease;
+  overflow: hidden;
+}
+
+.card:hover {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  border-color: var(--logthis-primary);
+}
+
+.card-header {
+  background: var(--logthis-bg-alt);
+  border-bottom: 1px solid var(--logthis-border);
+  font-weight: 600;
+  color: var(--logthis-text);
+  padding: 1rem 1.5rem;
+}
+
+.card-body {
+  padding: 1.5rem;
+}
+
+/* ============================================================================
+   Tables - Clean & Readable
+   ============================================================================ */
+
+table {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--logthis-border);
+  margin: 1.5em 0;
+  background-color: var(--logthis-bg) !important;
+}
+
+thead {
+  background: var(--logthis-bg-alt) !important;
+  border-bottom: 2px solid var(--logthis-border);
+}
+
+thead th {
+  padding: 0.875rem 1rem;
+  font-weight: 600;
+  text-align: left;
+  color: var(--logthis-text);
+  font-size: 0.875em;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background-color: var(--logthis-bg-alt) !important;
+}
+
+tbody {
+  background-color: var(--logthis-bg) !important;
+}
+
+tbody tr {
+  transition: background-color 0.15s ease;
+  border-bottom: 1px solid var(--logthis-border);
+  background-color: var(--logthis-bg) !important;
+}
+
+tbody tr:nth-child(even) {
+  background-color: var(--logthis-bg-alt) !important;
+}
+
+tbody tr:last-child {
+  border-bottom: none;
+}
+
+tbody tr:hover {
+  background-color: #e2e8f0 !important;
+}
+
+tbody td {
+  padding: 0.875rem 1rem;
+  color: var(--logthis-text);
+  border-color: var(--logthis-border) !important;
+}
+
+/* ============================================================================
+   Blockquotes - Subtle Emphasis
+   ============================================================================ */
+
+blockquote {
+  border-left: 3px solid var(--color-note);
+  background-color: var(--logthis-bg-alt);
+  padding: 1rem 1.5rem;
+  margin: 1.5em 0;
+  border-radius: 0 8px 8px 0;
+  font-style: normal;
+  color: var(--logthis-text-muted);
+}
+
+blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+blockquote strong {
+  color: var(--logthis-text);
+}
+
+/* ============================================================================
+   Alerts & Callouts - Clean Notifications
+   ============================================================================ */
+
+.alert {
+  border-left: 3px solid;
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin: 1.5em 0;
+  background: var(--logthis-bg-alt);
+  border-right: 1px solid var(--logthis-border);
+  border-top: 1px solid var(--logthis-border);
+  border-bottom: 1px solid var(--logthis-border);
+}
+
+.alert-info {
+  border-left-color: var(--color-note);
+}
+
+.alert-warning {
+  border-left-color: var(--color-warning);
+}
+
+.alert-danger {
+  border-left-color: var(--color-error);
+}
+
+.alert-success {
+  border-left-color: #10b981;
+}
+
+/* ============================================================================
+   Reference Page - Function Documentation
+   ============================================================================ */
+
+.ref-arguments th {
+  background-color: var(--logthis-bg-alt);
+  color: var(--logthis-text);
+  font-weight: 600;
+}
+
+.ref-examples {
+  border-left: 3px solid var(--color-note);
+  padding-left: 1.5em;
+  margin-top: 2em;
+}
+
+.ref-title code {
+  background: var(--logthis-code-bg);
+  color: var(--color-error);
+  padding: 0.5em 1em;
+  border-radius: 6px;
+  font-size: 1em;
+  border: 1px solid var(--logthis-code-border);
+}
+
+/* ============================================================================
+   Sidebar - Navigation
+   ============================================================================ */
+
+.sidebar {
+  background-color: var(--logthis-bg-alt);
+  border: 1px solid var(--logthis-border);
+  border-radius: 12px;
+  padding: 1.5rem;
+}
+
+.sidebar h2 {
+  color: var(--logthis-text);
+  font-size: 1.125em;
+  font-weight: 600;
+  border-bottom: 2px solid var(--logthis-border);
+  padding-bottom: 0.5em;
+  margin-bottom: 1em;
+}
+
+.sidebar ul {
+  list-style: none;
+  padding-left: 0;
+}
+
+.sidebar li {
+  padding: 0.5em 0;
+  padding-left: 1em;
+  border-left: 2px solid transparent;
+  transition: all 0.15s ease;
+  margin-bottom: 0.25em;
+}
+
+.sidebar li:hover {
+  border-left-color: var(--logthis-primary);
+  background-color: var(--logthis-bg);
+  margin-left: -0.5em;
+  padding-left: 1.5em;
+  border-radius: 6px;
+}
+
+.sidebar a {
+  color: var(--logthis-text-muted);
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 0.9375em;
+}
+
+.sidebar a:hover {
+  color: var(--logthis-primary);
+}
+
+/* ============================================================================
+   Home Page - Hero Section
+   ============================================================================ */
+
+.page-header {
+  background: linear-gradient(135deg, var(--logthis-primary) 0%, #0052a3 100%);
+  color: white;
+  padding: 3rem 2rem;
+  margin: -2rem -2rem 2rem -2rem;
+  border-radius: 0;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.page-header h1 {
+  font-size: 2.5em;
+  font-weight: 700;
+  margin-bottom: 0.5em;
+  color: white;
+  text-shadow: none;
+  margin-top: 0;
+}
+
+.page-header p {
+  font-size: 1.125em;
+  opacity: 0.95;
+  max-width: 800px;
+}
+
+/* ============================================================================
+   Article/Vignette Pages - Remove Blue Backgrounds
+   ============================================================================ */
+
+/* Remove blue background from article titles - comprehensive selectors */
+body.article .page-header,
+body.vignette .page-header,
+body.articles .page-header,
+article .page-header,
+main article .page-header,
+.container article .page-header,
+div[class*="article"] .page-header,
+div[class*="vignette"] .page-header {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  color: var(--logthis-text) !important;
+  border-bottom: 2px solid var(--logthis-border);
+  padding: 2rem 0 !important;
+  margin: 0 0 2rem 0 !important;
+  box-shadow: none !important;
+}
+
+/* Override any h1 styling in article headers */
+body.article .page-header h1,
+body.vignette .page-header h1,
+body.articles .page-header h1,
+article .page-header h1,
+main article .page-header h1,
+div[class*="article"] .page-header h1,
+div[class*="vignette"] .page-header h1 {
+  color: var(--logthis-text) !important;
+  text-shadow: none !important;
+  background: transparent !important;
+}
+
+/* Override paragraph styling in article headers */
+body.article .page-header p,
+body.vignette .page-header p,
+body.articles .page-header p,
+article .page-header p {
+  color: var(--logthis-text-muted) !important;
+  background: transparent !important;
+}
+
+/* Clean article header styling */
+.article-header,
+.vignette-header {
+  background: transparent !important;
+  background-color: transparent !important;
+  border-bottom: 2px solid var(--logthis-border);
+  padding-bottom: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+/* Ensure no gradient or colored backgrounds on ANY page header except homepage */
+body:not(.home) .page-header {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  color: var(--logthis-text) !important;
+}
+
+body:not(.home) .page-header h1 {
+  color: var(--logthis-text) !important;
+}
+
+/* ============================================================================
+   Badges & Labels
+   ============================================================================ */
+
+.badge {
+  padding: 0.375em 0.75em;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.8125em;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  display: inline-block;
+}
+
+.badge-primary { background-color: var(--logthis-primary); color: white; }
+.badge-trace { background-color: var(--color-trace); color: white; }
+.badge-note { background-color: var(--color-note); color: white; }
+.badge-warning { background-color: var(--color-warning); color: white; }
+.badge-error { background-color: var(--color-error); color: white; }
+
+/* ============================================================================
+   Search Enhancement
+   ============================================================================ */
+
+#search-input {
+  border-radius: 8px;
+  border: 1px solid var(--logthis-border);
+  padding: 0.5rem 1rem;
+  transition: all 0.2s ease;
+  background: var(--logthis-bg-alt);
+}
+
+#search-input:focus {
+  border-color: var(--logthis-primary);
+  box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.1);
+  outline: none;
+  background: var(--logthis-bg);
+}
+
+/* ============================================================================
+   Footer - Minimal
+   ============================================================================ */
+
+footer {
+  background-color: var(--logthis-bg-alt);
+  border-top: 1px solid var(--logthis-border);
+  color: var(--logthis-text-muted);
+  padding: 2rem 0;
+  margin-top: 4rem;
+  font-size: 0.9375em;
+}
+
+footer a {
+  color: var(--logthis-primary);
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+footer a:hover {
+  color: #0052a3;
+  text-decoration: underline;
+}
+
+/* ============================================================================
+   Section Dividers - Clean Breaks
+   ============================================================================ */
+
+hr {
+  border: none;
+  height: 1px;
+  background: linear-gradient(to right, transparent, var(--logthis-border), transparent);
+  margin: 3rem 0;
+}
+
+/* Section headers (# in markdown that create <hr>) */
+h1[id] + hr {
+  margin-top: -1rem;
+  margin-bottom: 2rem;
+}
+
+/* ============================================================================
+   Responsive Design
+   ============================================================================ */
+
+@media (max-width: 768px) {
+  body {
+    font-size: 15px;
+  }
+
+  .page-header h1 {
+    font-size: 2em;
+  }
+
+  pre {
+    font-size: 0.8125em;
+    padding: 1rem !important;
+  }
+
+  .navbar-brand {
+    font-size: 1.125em;
+  }
+
+  .card-body {
+    padding: 1rem;
+  }
+}
+
+/* ============================================================================
+   Smooth Scrolling & Performance
+   ============================================================================ */
+
+html {
+  scroll-behavior: smooth;
+}
+
+* {
+  transition-property: background-color, border-color, color, fill, stroke, opacity, box-shadow, transform;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Warp-inspired smooth interactions */
+a, button, .nav-link, .btn, .card {
+  will-change: transform;
+}
+
+/* ============================================================================
+   Print Styles
+   ============================================================================ */
+
+@media print {
+  pre {
+    background: white !important;
+    border: 1px solid #ccc !important;
+  }
+
+  pre code {
+    color: black !important;
+  }
+
+  .navbar, .sidebar, footer {
+    display: none;
+  }
+
+  body {
+    font-size: 12pt;
+  }
+}

@@ -2,7 +2,19 @@ url: https://iqis.github.io/logthis/
 
 template:
   bootstrap: 5
-  bootswatch: flatly
+  includes:
+    in_header: |
+      <link rel="stylesheet" href="extra.css">
+  bslib:
+    preset: "shiny"
+    base_font:
+      google: "Inter"
+    code_font:
+      google: "Fira Code"
+
+logo:
+  path: man/figures/logo.svg
+  alt: "logthis logo"
   
 home:
   title: "logthis • Structured Logging Framework for R"
@@ -13,7 +25,7 @@ home:
 navbar:
   structure:
     left: [intro, reference, articles, tutorials, news]
-    right: [search, github]
+    right: [logshiny, search, github]
   components:
     home:
       icon: fas fa-home
@@ -41,6 +53,11 @@ navbar:
     news:
       text: Changelog
       href: news/index.html
+    logshiny:
+      text: logshiny
+      icon: fas fa-plug
+      href: https://iqis.github.io/logshiny/
+      aria-label: logshiny (Shiny Integration)
     github:
       icon: fab fa-github
       href: https://github.com/iqis/logthis
