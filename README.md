@@ -1,12 +1,21 @@
-# logthis <img src="man/figures/logo.png" align="right" height="139" />
+# logthis <img src="man/figures/logo.svg" align="right" height="139" />
 
 > **A Structured Logging Framework for R**
 
 <!-- badges: start -->
-[![Lifecycle: experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
+[![Lifecycle: maturing](https://img.shields.io/badge/lifecycle-maturing-blue.svg)](https://lifecycle.r-lib.org/articles/stages.html#maturing)
 [![R-CMD-check](https://github.com/iqis/logthis/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/iqis/logthis/actions/workflows/R-CMD-check.yaml)
 [![Codecov test coverage](https://codecov.io/gh/iqis/logthis/branch/main/graph/badge.svg)](https://app.codecov.io/gh/iqis/logthis?branch=main)
 [![CRAN status](https://www.r-pkg.org/badges/version/logthis)](https://CRAN.R-project.org/package=logthis)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![pkgdown](https://img.shields.io/badge/docs-pkgdown-blue.svg)](https://iqis.github.io/logthis/)
+![GitHub last commit](https://img.shields.io/github/last-commit/iqis/logthis)
+![GitHub stars](https://img.shields.io/github/stars/iqis/logthis?style=social)
+
+![GxP Compliant](https://img.shields.io/badge/GxP-21%20CFR%20Part%2011-critical)
+![Claude Code Ready](https://img.shields.io/badge/Claude%20Code-ready-orange)
+![Shiny Integration](https://img.shields.io/badge/Shiny-integrated-blue?logo=r)
+![Cloud Native](https://img.shields.io/badge/cloud-AWS%20%7C%20Azure-9cf)
 <!-- badges: end -->
 
 `logthis` is a sophisticated logging package for R that provides a flexible, structured approach to application logging. It implements enterprise-level logging patterns similar to log4j or Python's logging module, specifically designed for the R ecosystem.
@@ -256,28 +265,15 @@ to_email(to = "alerts@example.com", smtp_settings = ...)
 
 ## Learn More
 
-### 📖 Fundamentals
+Detailed guides and advanced techniques:
+
 - **[Getting Started](articles/getting-started.html)** - Basic setup and usage patterns
-- **[Patterns](articles/patterns.html)** - Common logging patterns and best practices
-- **[Tagging and Provenance](articles/tagging-and-provenance.html)** - Track data lineage and execution context
-
-### 🚀 Advanced Topics
-- **[Middleware](articles/middleware.html)** - Transform events with middleware (PII redaction, sampling, enrichment)
-- **[Shiny Logging](articles/shiny-logging.html)** - User-facing alerts, session tracking, reactive debugging
-- **[Package Development](articles/package-development.html)** - Integrate logthis into R packages
+- **[GxP Compliance & Pharmaceutical Logging](articles/gxp-compliance.html)** - 21 CFR Part 11 compliance and ALCOA+ audit trails
+- **[Patterns](articles/patterns.html)** - Advanced patterns: middleware, logger chaining, architecture
 - **[Advanced Receivers](articles/advanced-receivers.html)** - Custom receivers, async logging, buffering
-
-### ⚡ Operations
-- **[Performance](articles/performance.html)** - Optimization, benchmarking, high-throughput strategies
-- **[Production Deployment](articles/production.html)** - Centralized logging, rotation, retention, security
-
-### 🏥 Special Topics
-- **[GxP Compliance](articles/gxp-compliance.html)** - 21 CFR Part 11 compliance and ALCOA+ audit trails
-- **[Python Comparison](articles/python-comparison.html)** - Comparison with Python logging ecosystem
+- **[Tagging and Provenance](articles/tagging-and-provenance.html)** - Track data lineage and execution context
+- **[Python Comparison](articles/python-comparison.html)** - Comparison with Python logging
 - **[Migration Guide](articles/migration-guide.html)** - Migrate from other logging packages
-
-### 🤖 Tools
-- **[AI Integration Guide](articles/ai-integration.html)** - AI-assisted logthis integration for any project
 - **[Function Reference](reference/index.html)** - Complete API documentation
 
 ## Use Cases
