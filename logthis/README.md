@@ -3,10 +3,19 @@
 > **A Structured Logging Framework for R**
 
 <!-- badges: start -->
-[![Lifecycle: experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
+[![Lifecycle: maturing](https://img.shields.io/badge/lifecycle-maturing-blue.svg)](https://lifecycle.r-lib.org/articles/stages.html#maturing)
 [![R-CMD-check](https://github.com/iqis/logthis/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/iqis/logthis/actions/workflows/R-CMD-check.yaml)
 [![Codecov test coverage](https://codecov.io/gh/iqis/logthis/branch/main/graph/badge.svg)](https://app.codecov.io/gh/iqis/logthis?branch=main)
 [![CRAN status](https://www.r-pkg.org/badges/version/logthis)](https://CRAN.R-project.org/package=logthis)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![pkgdown](https://img.shields.io/badge/docs-pkgdown-blue.svg)](https://iqis.github.io/logthis/)
+![GitHub last commit](https://img.shields.io/github/last-commit/iqis/logthis)
+![GitHub stars](https://img.shields.io/github/stars/iqis/logthis?style=social)
+
+![GxP Compliant](https://img.shields.io/badge/GxP-21%20CFR%20Part%2011-critical)
+![Claude Code Ready](https://img.shields.io/badge/Claude%20Code-ready-orange)
+![Shiny Integration](https://img.shields.io/badge/Shiny-integrated-blue?logo=r)
+![Cloud Native](https://img.shields.io/badge/cloud-AWS%20%7C%20Azure-9cf)
 <!-- badges: end -->
 
 `logthis` is a sophisticated logging package for R that provides a flexible, structured approach to application logging. It implements enterprise-level logging patterns similar to log4j or Python's logging module, specifically designed for the R ecosystem.
