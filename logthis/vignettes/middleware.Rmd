@@ -1,0 +1,836 @@
+---
+title: "Middleware: Transform Events in the Pipeline"
+author: "logthis Team"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Middleware: Transform Events in the Pipeline}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+library(logthis)
+```
+
+## Introduction
+
+**Middleware** is one of the most powerful features in logthis, allowing you to transform log events as they flow through your logging pipeline. Think of middleware as a series of filters and transformers that can modify, enrich, drop, or route events before they reach receivers.
+
+This vignette covers:
+
+- What middleware is and how it works
+- Logger-level vs receiver-level middleware
+- Common middleware patterns
+- Writing custom middleware
+- Performance considerations
+- Real-world examples
+
+## What is Middleware?
+
+Middleware is a function that transforms log events in a pipeline:
+
+```
+Event → Middleware 1 → Middleware 2 → Logger Filter → Receivers
+```
+
+Each middleware function receives an event and can:
+
+- **Transform** the event (add fields, modify message, change level)
+- **Drop** the event (return `NULL` to short-circuit the pipeline)
+- **Pass through** unchanged (return the event as-is)
+
+### The Middleware Function
+
+A middleware function has this signature:
+
+```{r eval=FALSE}
+function(event) {
+  # Transform the event
+  event$new_field <- "value"
+
+  # Return the modified event (or NULL to drop)
+  event
+}
+```
+
+To create middleware, wrap your function with `middleware()`:
+
+```{r}
+add_hostname <- middleware(function(event) {
+  event$hostname <- Sys.info()["nodename"]
+  event
+})
+```
+
+### When Middleware Runs
+
+**Critical insight:** Middleware runs **before** logger-level filtering, so it can:
+
+- Modify event levels (for dynamic routing)
+- Add tags/flags (for receiver filtering)
+- Drop events (for sampling/rate limiting)
+- Enrich events (add context automatically)
+
+This timing is what makes middleware so powerful for cross-cutting concerns.
+
+## Logger-Level Middleware
+
+Logger-level middleware transforms **all events** before they reach any receiver.
+
+### Basic Usage
+
+```{r eval=FALSE}
+log_this <- logger() %>%
+  with_middleware(add_hostname) %>%
+  with_receivers(
+    to_console(),
+    to_json() %>% on_local("app.jsonl")
+  )
+
+log_this(NOTE("Application started"))
+# Both receivers see the hostname field
+```
+
+### Multiple Middleware (Chaining)
+
+Middleware executes in order:
+
+```{r eval=FALSE}
+log_this <- logger() %>%
+  with_middleware(
+    add_hostname,      # Stage 1: Add hostname
+    add_timestamp,     # Stage 2: Add timestamp
+    redact_pii         # Stage 3: Security
+  ) %>%
+  with_receivers(to_console())
+```
+
+**Order matters!** The event flows through middleware sequentially:
+
+```
+Event → add_hostname → add_timestamp → redact_pii → Receivers
+```
+
+## Receiver-Level Middleware
+
+**New in logthis:** The same `with_middleware()` function works on receivers via S3 dispatch!
+
+This enables **differential transformation** - different middleware per receiver:
+
+```{r eval=FALSE}
+# Different redaction levels per receiver
+redact_full <- middleware(function(event) {
+  event$message <- gsub("\\d{3}-\\d{2}-\\d{4}", "***-**-****", event$message)
+  event
+})
+
+redact_partial <- middleware(function(event) {
+  event$message <- gsub("(\\d{3}-\\d{2}-)\\d{4}", "\\1****", event$message)
+  event
+})
+
+logger() %>%
+  with_receivers(
+    # Console: full redaction
+    to_console() %>% with_middleware(redact_full),
+
+    # Internal log: partial redaction
+    to_json() %>% on_local("internal.jsonl") %>%
+      with_middleware(redact_partial),
+
+    # Secure vault: no redaction
+    to_json() %>% on_s3(bucket = "vault", key = "full.jsonl")
+  )
+```
+
+### Execution Order
+
+The complete event flow with both logger and receiver middleware:
+
+```
+Event → Logger Middleware → Logger Filter → Apply Logger Tags →
+  Receiver 1 Middleware → Receiver 1 Filter → Receiver 1 Output
+  Receiver 2 Middleware → Receiver 2 Filter → Receiver 2 Output
+```
+
+**Use cases for receiver-level middleware:**
+
+- Differential PII redaction (different policies per destination)
+- Cost optimization (sample before expensive cloud logging)
+- Format-specific enrichment (add fields only for specific outputs)
+
+## Common Middleware Patterns
+
+### Pattern 1: Context Enrichment
+
+Automatically add contextual information to all events:
+
+```{r eval=FALSE}
+add_system_context <- middleware(function(event) {
+  event$hostname <- Sys.info()["nodename"]
+  event$os <- Sys.info()["sysname"]
+  event$r_version <- paste(R.version$major, R.version$minor, sep = ".")
+  event
+})
+
+add_app_context <- function(app_name, app_version, environment = "production") {
+  middleware(function(event) {
+    event$app_name <- app_name
+    event$app_version <- app_version
+    event$environment <- environment
+    event
+  })
+}
+
+# Usage
+log_this <- logger() %>%
+  with_middleware(
+    add_system_context,
+    add_app_context(
+      app_name = "my-api",
+      app_version = "1.0.0",
+      environment = "production"
+    )
+  ) %>%
+  with_receivers(to_console())
+```
+
+### Pattern 2: PII Redaction
+
+Remove sensitive information before logging:
+
+```{r eval=FALSE}
+redact_ssn <- middleware(function(event) {
+  # Redact SSN patterns (123-45-6789 or 123456789)
+  pattern <- "\\b\\d{3}-?\\d{2}-?\\d{4}\\b"
+
+  event$message <- gsub(pattern, "***-**-****", event$message)
+
+  # Also redact custom fields
+  if (!is.null(event$ssn)) {
+    event$ssn <- "***-**-****"
+  }
+
+  event
+})
+
+redact_credit_cards <- middleware(function(event) {
+  # Keep only last 4 digits
+  pattern <- "\\b\\d{12,16}\\b"
+
+  event$message <- gsub(
+    pattern,
+    function(match) {
+      paste0(strrep("*", nchar(match) - 4), substr(match, nchar(match) - 3, nchar(match)))
+    },
+    event$message
+  )
+
+  event
+})
+
+# Chain multiple redactions
+log_this <- logger() %>%
+  with_middleware(
+    redact_ssn,
+    redact_credit_cards
+  ) %>%
+  with_receivers(to_console())
+```
+
+### Pattern 3: Event Sampling
+
+Reduce log volume while maintaining visibility:
+
+```{r eval=FALSE}
+sample_by_level <- function(debug_rate = 0.01, note_rate = 0.1,
+                            message_rate = 1.0, warning_rate = 1.0) {
+  middleware(function(event) {
+    # Always keep errors and above
+    if (event$level_number >= attr(WARNING, "level_number")) {
+      return(event)
+    }
+
+    # Sample based on level
+    sample_rate <- if (event$level_class == "DEBUG") {
+      debug_rate
+    } else if (event$level_class == "NOTE") {
+      note_rate
+    } else {
+      message_rate
+    }
+
+    # Keep or drop based on random sampling
+    if (runif(1) <= sample_rate) {
+      event$sampled <- TRUE
+      event$sample_rate <- sample_rate
+      event
+    } else {
+      NULL  # Drop event
+    }
+  })
+}
+
+# Usage: Keep 1% of DEBUG, 10% of NOTE, all others
+log_this <- logger() %>%
+  with_middleware(
+    sample_by_level(debug_rate = 0.01, note_rate = 0.1)
+  ) %>%
+  with_receivers(to_console())
+```
+
+### Pattern 4: Performance Tracking
+
+Calculate durations and track performance:
+
+```{r eval=FALSE}
+add_duration <- middleware(function(event) {
+  # If event has start_time, calculate duration
+  if (!is.null(event$start_time)) {
+    duration_seconds <- as.numeric(
+      difftime(Sys.time(), event$start_time, units = "secs")
+    )
+
+    event$duration_seconds <- round(duration_seconds, 3)
+    event$duration_ms <- round(duration_seconds * 1000, 1)
+
+    # Remove start_time (no longer needed)
+    event$start_time <- NULL
+  }
+
+  event
+})
+
+classify_performance <- function(fast_threshold_ms = 100,
+                                slow_threshold_ms = 1000) {
+  middleware(function(event) {
+    if (!is.null(event$duration_ms)) {
+      event$performance <- if (event$duration_ms < fast_threshold_ms) {
+        "fast"
+      } else if (event$duration_ms < slow_threshold_ms) {
+        "acceptable"
+      } else {
+        "slow"
+      }
+
+      # Escalate slow operations to WARNING
+      if (event$performance == "slow" &&
+          event$level_number < attr(WARNING, "level_number")) {
+        event$level_class <- "WARNING"
+        event$level_number <- attr(WARNING, "level_number")
+        event$escalated <- TRUE
+      }
+    }
+
+    event
+  })
+}
+
+# Usage
+log_this <- logger() %>%
+  with_middleware(
+    add_duration,
+    classify_performance(fast_threshold_ms = 100, slow_threshold_ms = 1000)
+  ) %>%
+  with_receivers(to_console(lower = WARNING))
+
+# Track operation
+start_time <- Sys.time()
+# ... do expensive operation ...
+log_this(NOTE(
+  "Database query completed",
+  query = "SELECT * FROM users",
+  start_time = start_time
+))
+# If slow (>1000ms), escalated to WARNING and logged
+```
+
+### Pattern 5: Event Routing
+
+Add flags that receivers can filter on:
+
+```{r eval=FALSE}
+route_events <- middleware(function(event) {
+  # Route errors to PagerDuty
+  if (event$level_number >= attr(ERROR, "level_number")) {
+    event$route_to_pagerduty <- TRUE
+  }
+
+  # Route security events to SIEM
+  if (!is.null(event$tags) && "security" %in% event$tags) {
+    event$route_to_siem <- TRUE
+  }
+
+  # Route high-value transactions to audit log
+  if (!is.null(event$transaction_amount) && event$transaction_amount > 10000) {
+    event$route_to_audit <- TRUE
+  }
+
+  event
+})
+
+# Receivers filter on flags
+log_this <- logger() %>%
+  with_middleware(route_events) %>%
+  with_receivers(
+    # PagerDuty receiver
+    receiver(function(event) {
+      if (isTRUE(event$route_to_pagerduty)) {
+        # ... send to PagerDuty
+      }
+      invisible(NULL)
+    }),
+
+    # SIEM receiver
+    receiver(function(event) {
+      if (isTRUE(event$route_to_siem)) {
+        # ... send to SIEM
+      }
+      invisible(NULL)
+    }),
+
+    # All events to local file
+    to_json() %>% on_local("app.jsonl")
+  )
+```
+
+## Multi-Stage Middleware Pipeline
+
+For complex applications, organize middleware into stages:
+
+```{r eval=FALSE}
+log_this <- logger() %>%
+  with_middleware(
+    # Stage 1: Security (FIRST - before any processing)
+    redact_ssn,
+    redact_credit_cards,
+
+    # Stage 2: Enrichment (add context)
+    add_system_context,
+    add_app_context(
+      app_name = "api",
+      app_version = "1.0.0",
+      environment = "prod"
+    ),
+    add_request_id(),  # Distributed tracing
+
+    # Stage 3: Performance (calculate timings)
+    add_duration,
+    classify_performance(),
+
+    # Stage 4: Routing (add flags for receivers)
+    route_events,
+
+    # Stage 5: Sampling (LAST - after enrichment, reduces volume)
+    sample_by_level(debug_rate = 0.01, note_rate = 0.1)
+  ) %>%
+  with_receivers(
+    to_console(lower = WARNING),
+    to_json() %>% on_local("app.jsonl")
+  )
+```
+
+**Order matters!**
+
+1. **Security first** - Redact sensitive data before anything else
+2. **Enrichment** - Add context to all events
+3. **Performance** - Calculate metrics based on enriched events
+4. **Routing** - Add flags based on complete event data
+5. **Sampling last** - Reduce volume after all transformations
+
+## Writing Custom Middleware
+
+### Basic Template
+
+```{r eval=FALSE}
+#' My Custom Middleware
+#'
+#' Description of what this middleware does.
+#'
+#' @param param1 Description
+#' @return A middleware function
+#' @export
+my_middleware <- function(param1 = "default") {
+  # Configuration validation
+  if (!is.character(param1)) {
+    stop("`param1` must be a character string")
+  }
+
+  # Return middleware function
+  middleware(function(event) {
+    # Transform event
+    event$my_field <- param1
+
+    # Return modified event (or NULL to drop)
+    event
+  })
+}
+```
+
+### Stateful Middleware (Using Closures)
+
+Middleware can maintain state across invocations:
+
+```{r eval=FALSE}
+rate_limiter <- function(max_events_per_second = 100) {
+  # Closure state
+  event_count <- 0
+  window_start <- Sys.time()
+
+  middleware(function(event) {
+    current_time <- Sys.time()
+
+    # Reset window if 1 second has passed
+    if (difftime(current_time, window_start, units = "secs") >= 1) {
+      event_count <<- 0
+      window_start <<- current_time
+    }
+
+    # Increment counter
+    event_count <<- event_count + 1
+
+    # Drop if over limit
+    if (event_count > max_events_per_second) {
+      return(NULL)
+    }
+
+    event$rate_limit_count <- event_count
+    event
+  })
+}
+
+# Usage
+log_this <- logger() %>%
+  with_middleware(
+    rate_limiter(max_events_per_second = 100)
+  ) %>%
+  with_receivers(to_console())
+```
+
+### Conditional Middleware
+
+Middleware that only applies to certain events:
+
+```{r eval=FALSE}
+enrich_database_events <- middleware(function(event) {
+  # Only enrich events tagged with "database"
+  if (is.null(event$tags) || !("database" %in% event$tags)) {
+    return(event)  # Pass through unchanged
+  }
+
+  # Add database-specific context
+  event$db_pool_size <- get_db_pool_size()
+  event$db_active_connections <- get_active_connections()
+
+  event
+})
+```
+
+## Environment-Specific Middleware
+
+Different middleware configurations for different environments:
+
+```{r eval=FALSE}
+create_logger <- function(environment = "production") {
+  base_logger <- logger()
+
+  if (environment == "production") {
+    # Production: redaction, sampling, alerting
+    base_logger %>%
+      with_middleware(
+        redact_ssn,
+        redact_credit_cards,
+        add_system_context,
+        add_app_context(
+          app_name = "my-app",
+          app_version = "1.0.0",
+          environment = "production"
+        ),
+        sample_by_level(debug_rate = 0.01),
+        classify_performance(slow_threshold_ms = 5000),
+        route_events
+      ) %>%
+      with_receivers(
+        to_console(lower = ERROR),  # Only errors to console
+        to_json() %>% on_s3(bucket = "prod-logs", key = "app.jsonl")
+      )
+  } else if (environment == "development") {
+    # Development: verbose, no sampling, local files
+    base_logger %>%
+      with_middleware(
+        add_system_context,
+        add_duration,
+        classify_performance()
+      ) %>%
+      with_receivers(
+        to_console(lower = DEBUG),  # All events to console
+        to_json() %>% on_local("dev.jsonl")
+      )
+  } else {
+    # Testing: minimal middleware
+    base_logger %>%
+      with_receivers(to_console(lower = NOTE))
+  }
+}
+
+# Detect environment from env var
+log_this <- create_logger(Sys.getenv("ENVIRONMENT", "development"))
+```
+
+## Scope-Based Middleware
+
+Middleware works with scope-based logger masking:
+
+```{r eval=FALSE}
+# Parent logger with base middleware
+log_this <- logger() %>%
+  with_middleware(add_system_context) %>%
+  with_receivers(to_console())
+
+log_this(NOTE("Parent scope"))  # Has system context
+
+# Child scope - adds MORE middleware
+my_function <- function() {
+  log_this <- log_this %>%
+    with_middleware(add_request_id("REQ-123"))
+
+  log_this(NOTE("Child scope"))  # Has system context AND request ID
+}
+my_function()
+
+# Back to parent scope
+log_this(NOTE("Parent again"))  # Only system context
+```
+
+**Key insight:** Middleware chains just like receivers and tags!
+
+## Testing Middleware
+
+Use `to_itself()` (or `to_identity()`) to capture events for testing:
+
+```{r eval=FALSE}
+test_that("middleware adds hostname", {
+  add_hostname <- middleware(function(event) {
+    event$hostname <- Sys.info()["nodename"]
+    event
+  })
+
+  log_capture <- logger() %>%
+    with_middleware(add_hostname) %>%
+    with_receivers(to_itself())
+
+  result <- log_capture(NOTE("Test message"))
+
+  expect_true(!is.null(result$hostname))
+  expect_equal(result$hostname, Sys.info()["nodename"])
+})
+
+test_that("sampling middleware drops events", {
+  # Deterministic sampling (always drop)
+  drop_all <- middleware(function(event) NULL)
+
+  log_capture <- logger() %>%
+    with_middleware(drop_all) %>%
+    with_receivers(to_itself())
+
+  result <- log_capture(NOTE("This should be dropped"))
+
+  expect_null(result)  # Event was dropped
+})
+```
+
+## Performance Considerations
+
+### Middleware Overhead
+
+Each middleware adds function call overhead:
+
+- **Minimal impact:** 1-3 middleware functions (~microseconds per event)
+- **Moderate impact:** 5-10 middleware functions
+- **High impact:** Complex regex in PII redaction (milliseconds per event)
+
+### Optimization Tips
+
+#### 1. Early Return for Non-Applicable Events
+
+```{r eval=FALSE}
+# GOOD: Early return
+my_middleware <- middleware(function(event) {
+  # Skip if not applicable
+  if (is.null(event$special_field)) {
+    return(event)
+  }
+
+  # ... expensive processing
+})
+
+# BAD: Always processes
+my_middleware <- middleware(function(event) {
+  if (!is.null(event$special_field)) {
+    # ... expensive processing
+  }
+  event
+})
+```
+
+#### 2. Compile Regexes Once (Use Closures)
+
+```{r eval=FALSE}
+# GOOD: Regex compiled once
+redact_ssn <- function() {
+  ssn_pattern <- "\\b\\d{3}-?\\d{2}-?\\d{4}\\b"  # Compiled once
+
+  middleware(function(event) {
+    event$message <- gsub(ssn_pattern, "***-**-****", event$message)
+    event
+  })
+}
+
+# BAD: Regex compiled on every event
+redact_ssn <- middleware(function(event) {
+  pattern <- "\\b\\d{3}-?\\d{2}-?\\d{4}\\b"  # Compiled every time!
+  event$message <- gsub(pattern, "***-**-****", event$message)
+  event
+})
+```
+
+#### 3. Sample Before Expensive Operations
+
+```{r eval=FALSE}
+# GOOD: Sample first (reduces work)
+logger() %>%
+  with_middleware(
+    sample_by_level(debug_rate = 0.01),  # Drop 99% of DEBUG
+    redact_ssn,                          # Redact remaining 1%
+    add_system_context                   # Enrich remaining 1%
+  )
+
+# BAD: Expensive operations on all events
+logger() %>%
+  with_middleware(
+    redact_ssn,                          # Redacts 100% of events
+    add_system_context,                  # Enriches 100% of events
+    sample_by_level(debug_rate = 0.01)   # Then drops 99%!
+  )
+```
+
+## Real-World Example: API Server
+
+Here's a complete example for an API server with comprehensive middleware:
+
+```{r eval=FALSE}
+library(logthis)
+
+# Define middleware
+add_api_context <- function(app_version) {
+  middleware(function(event) {
+    event$app_name <- "my-api"
+    event$app_version <- app_version
+    event$environment <- Sys.getenv("ENVIRONMENT", "development")
+    event
+  })
+}
+
+add_request_context <- function(request_id, user_id = NULL, endpoint = NULL) {
+  middleware(function(event) {
+    event$request_id <- request_id
+    if (!is.null(user_id)) event$user_id <- user_id
+    if (!is.null(endpoint)) event$endpoint <- endpoint
+    event
+  })
+}
+
+# Create logger factory
+create_api_logger <- function(environment = "production") {
+  logger() %>%
+    with_middleware(
+      # Stage 1: Security
+      redact_ssn,
+
+      # Stage 2: Enrichment
+      add_system_context,
+      add_api_context(app_version = "1.0.0"),
+
+      # Stage 3: Performance
+      add_duration,
+      classify_performance(),
+
+      # Stage 4: Sampling (production only)
+      if (environment == "production") {
+        sample_by_level(debug_rate = 0.01, note_rate = 0.1)
+      } else {
+        NULL  # No sampling in development
+      }
+    ) %>%
+    with_receivers(
+      to_console(lower = if (environment == "production") WARNING else DEBUG),
+      to_json() %>% on_local(paste0(environment, ".jsonl"))
+    )
+}
+
+# Initialize global logger
+log_this <- create_api_logger(Sys.getenv("ENVIRONMENT", "development"))
+
+# In request handler
+handle_api_request <- function(request) {
+  # Add request-specific middleware in scope
+  log_this <- log_this %>%
+    with_middleware(
+      add_request_context(
+        request_id = request$id,
+        user_id = request$user_id,
+        endpoint = request$endpoint
+      )
+    )
+
+  # Track request
+  start_time <- Sys.time()
+
+  log_this(NOTE("Request started"))
+
+  tryCatch({
+    # Process request
+    result <- process_request(request)
+
+    log_this(NOTE(
+      "Request completed",
+      status = "success",
+      start_time = start_time
+    ))
+
+    result
+  }, error = function(e) {
+    log_this(ERROR(
+      "Request failed",
+      error = conditionMessage(e),
+      start_time = start_time
+    ))
+
+    stop(e)
+  })
+}
+```
+
+## See Also
+
+- `vignette("patterns")` - Common logging patterns
+- `vignette("getting-started")` - Introduction to logthis
+- `vignette("advanced-receivers")` - Custom receivers
+- `examples/middleware/` - Complete middleware examples with GxP patterns
+
+## Summary
+
+Middleware enables powerful event transformations:
+
+- **Logger-level middleware** transforms all events before receivers
+- **Receiver-level middleware** enables differential transformation per destination
+- **Order matters** - organize into stages (security → enrichment → sampling)
+- **Use closures** for configuration and stateful middleware
+- **Test with `to_itself()`** to capture transformed events
+- **Optimize** with early returns, compiled regexes, and strategic sampling
+
+Middleware is ideal for cross-cutting concerns like PII redaction, context enrichment, performance tracking, and event routing.

@@ -1,0 +1,929 @@
+---
+title: "AI-Assisted Integration Guide"
+author: "logthis Team"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{AI-Assisted Integration Guide}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval = FALSE
+)
+library(logthis)
+```
+
+## Introduction
+
+**Audience:** This vignette is unique - it's written for **both humans and AI coding assistants**. Whether you're a developer using AI tools (Copilot, Cursor, Claude Code) or an AI assistant integrating logthis into a project, this guide provides structured patterns for successful integration.
+
+**Goal:** Enable rapid, correct integration of logthis logging into any R project with minimal back-and-forth.
+
+## For Human Developers Using AI Assistants
+
+### How to Use This Guide
+
+When asking an AI assistant to add logging to your project:
+
+**1. Point to this vignette:**
+
+```
+"I want to add logthis logging to my R project.
+Follow the patterns in vignette('ai-integration', package='logthis')."
+```
+
+**2. Specify your project type:**
+
+- R package (`package`)
+- Shiny application (`shiny`)
+- Data analysis script (`script`)
+- API/web service (`api`)
+- Batch processing (`batch`)
+
+**3. Specify your requirements:**
+
+- Log levels needed (DEBUG, NOTE, WARNING, ERROR)
+- Destinations (console, file, cloud, database)
+- Context to capture (user, session, performance, etc.)
+- Compliance needs (GxP, HIPAA, SOX, etc.)
+
+**Example request:**
+
+```
+"Add logthis logging to my Shiny app. I need:
+- User session tracking
+- Error alerts via inline panels
+- Backend logs to JSON file
+- GxP-compliant audit trail
+Follow the Shiny pattern in vignette('ai-integration')."
+```
+
+### Common Use Cases
+
+#### Use Case 1: Adding Logging to Existing Package
+
+```
+"Add logthis to my existing R package 'mypackage'.
+I want:
+- Console logging for WARNING and above
+- Users can configure logging
+- Log function entry/exit for debugging
+Use the package pattern from vignette('ai-integration')."
+```
+
+#### Use Case 2: Shiny App with User Feedback
+
+```
+"Add logthis to my Shiny app with:
+- Inline alert panels for user feedback
+- Session tracking for each user
+- JSON file logging for audit trail
+Use the Shiny pattern from vignette('ai-integration')."
+```
+
+#### Use Case 3: Production API
+
+```
+"Add logthis to my plumber API with:
+- Request/response logging
+- Performance tracking (duration)
+- CloudWatch integration
+- Async logging for performance
+Use the API pattern from vignette('ai-integration')."
+```
+
+## For AI Assistants: Integration Patterns
+
+### Pattern Detection
+
+When asked to add logthis, detect project type from codebase:
+
+**R Package indicators:**
+- `DESCRIPTION` file exists
+- `NAMESPACE` file exists
+- `R/` directory with function definitions
+- `man/` directory with documentation
+
+**Shiny application indicators:**
+- `app.R` or `server.R` and `ui.R` files
+- `shiny::` or `library(shiny)` calls
+- `shinyApp()`, `fluidPage()`, `server <- function()` patterns
+
+**API/web service indicators:**
+- `plumber.R` file or `#* @get`/`#* @post` annotations
+- `httr::`, `jsonlite::` usage
+- REST endpoint definitions
+
+**Script indicators:**
+- Single `.R` file
+- `source()`, `readRDS()`, `saveRDS()` patterns
+- No package structure
+
+**Batch processing indicators:**
+- Data pipeline patterns (`dplyr`, `data.table`)
+- File I/O operations
+- Long-running computations
+
+### Integration Workflow
+
+**Step 1: Analyze codebase structure**
+
+```r
+# Read project files
+list.files(recursive = TRUE, pattern = "\\.(R|Rmd)$")
+
+# Identify:
+# - Project type
+# - Entry points (main functions, server function, etc.)
+# - Critical paths (user-facing, high-volume, error-prone)
+# - Existing error handling
+```
+
+**Step 2: Determine integration points**
+
+- Package: `R/zzz.R` for initialization, main functions for logging
+- Shiny: `server()` function for logger creation, `observeEvent()` for events
+- API: Plumber filters for request logging, endpoints for business logic
+- Script: Top of script for initialization, key operations for events
+
+**Step 3: Apply appropriate pattern**
+
+Choose from patterns below based on project type.
+
+**Step 4: Validate integration**
+
+- Ensure no syntax errors
+- Check that logger is initialized before use
+- Verify receivers are appropriate for environment
+- Add examples/comments for user understanding
+
+### Pattern 1: R Package Integration
+
+**When to use:** Project has `DESCRIPTION`, `NAMESPACE`, `R/` directory
+
+**Integration steps:**
+
+```r
+# 1. Add to DESCRIPTION
+# Imports:
+#     logthis
+
+# 2. Create R/zzz.R (if not exists)
+.pkg_log <- NULL
+
+.onLoad <- function(libname, pkgname) {
+  .pkg_log <<- logger() %>%
+    with_tags(package = pkgname) %>%
+    with_receivers(to_console(lower = WARNING))
+
+  invisible()
+}
+
+# Export configuration function
+#' Configure package logging
+#' @param level Minimum log level (NOTE, WARNING, ERROR)
+#' @param file Optional log file path
+#' @export
+mypackage_configure_logging <- function(level = WARNING, file = NULL) {
+  receivers <- list(to_console(lower = level))
+
+  if (!is.null(file)) {
+    receivers[[length(receivers) + 1]] <-
+      to_json() %>% on_local(file, lower = level)
+  }
+
+  .pkg_log <<- logger() %>%
+    with_tags(package = "mypackage") %>%
+    with_receivers(!!!receivers)
+
+  invisible(.pkg_log)
+}
+
+# 3. Add logging to exported functions
+#' Your exported function
+#' @export
+my_function <- function(x) {
+  .pkg_log(NOTE("Function called", arg_x = class(x)))
+
+  tryCatch({
+    result <- compute(x)
+    .pkg_log(NOTE("Function completed"))
+    result
+  }, error = function(e) {
+    .pkg_log(ERROR(
+      "Function failed",
+      error = conditionMessage(e)
+    ))
+    stop(e)
+  })
+}
+
+# 4. Add logging to internal functions (optional)
+.internal_function <- function(x) {
+  .pkg_log(DEBUG("Internal function called", x = x))
+  # ... implementation
+}
+
+# 5. Add to NAMESPACE (via roxygen2)
+#' @importFrom logthis logger NOTE WARNING ERROR to_console with_tags with_receivers
+NULL
+
+# 6. Document in package-level help
+#' Logging in mypackage
+#'
+#' Configure logging with \code{\link{mypackage_configure_logging}}.
+#'
+#' @examples
+#' # Show all logs
+#' mypackage_configure_logging(level = logthis::NOTE)
+#'
+#' # Only errors
+#' mypackage_configure_logging(level = logthis::ERROR)
+#'
+#' @name mypackage-logging
+NULL
+```
+
+**Key considerations:**
+- Initialize logger in `.onLoad()` (not `.onAttach()`)
+- Default to WARNING level (don't spam user consoles)
+- Provide configuration function for users
+- Use DEBUG for internal debugging, WARNING/ERROR for user-facing
+- Document logging behavior
+
+### Pattern 2: Shiny Application Integration
+
+**When to use:** Project has `app.R` or `server.R`/`ui.R`
+
+**Integration steps:**
+
+```r
+# 1. Install logshiny (if not already installed)
+# install.packages("logshiny")  # or devtools::install_github("iqis/logthis", subdir = "logshiny")
+
+# 2. Add to UI (for user-facing alerts)
+library(shiny)
+library(logthis)
+library(logshiny)
+
+ui <- fluidPage(
+  titlePanel("My Shiny App"),
+
+  # Add alert panel for user feedback
+  alert_panel(
+    "user_alerts",
+    max_alerts = 5,
+    dismissible = TRUE,
+    auto_dismiss_ms = 5000,
+    position = "top"
+  ),
+
+  # ... rest of UI
+)
+
+# 3. Create logger in server function
+server <- function(input, output, session) {
+  # Middleware for session context
+  add_shiny_session <- function(session) {
+    middleware(function(event) {
+      if (!is.null(session)) {
+        event$session_token <- session$token
+        event$user_id <- session$user$user_id %||% "anonymous"
+      }
+      event
+    })
+  }
+
+  # User-facing logger (for UI feedback)
+  log_user <- logger() %>%
+    with_receivers(
+      to_alert_panel("user_alerts", lower = WARNING)
+    )
+
+  # Developer logger (for debugging/audit)
+  log_dev <- logger() %>%
+    with_middleware(add_shiny_session(session)) %>%
+    with_receivers(
+      to_console(lower = DEBUG),
+      to_json() %>% on_local("logs/app.jsonl")
+    )
+
+  # Lifecycle logging
+  log_dev(NOTE("Session started"))
+
+  session$onSessionEnded(function() {
+    log_dev(NOTE("Session ended"))
+  })
+
+  # 4. Add logging to observeEvent/reactive
+  observeEvent(input$submit, {
+    log_dev(NOTE("Submit button clicked"))
+
+    tryCatch({
+      # Validate input
+      if (input$name == "") {
+        log_user(WARNING("Name cannot be empty"))
+        log_dev(WARNING("Validation failed", field = "name"))
+        return()
+      }
+
+      # Process
+      result <- process_form(input)
+
+      log_user(NOTE("Form submitted successfully!"))
+      log_dev(NOTE(
+        "Form processed",
+        user_id = session$user$user_id,
+        result_id = result$id
+      ))
+    }, error = function(e) {
+      log_user(ERROR("An error occurred. Please try again."))
+      log_dev(ERROR(
+        "Form processing failed",
+        error = conditionMessage(e),
+        input_values = reactiveValuesToList(input)
+      ))
+    })
+  })
+}
+
+shinyApp(ui, server)
+```
+
+**Key considerations:**
+- Create logger **per session** (in `server()` function)
+- Separate user-facing (`log_user`) and developer (`log_dev`) loggers
+- Add session context middleware for tracking users
+- Use `to_alert_panel()` for user feedback
+- Log session lifecycle (start/end)
+- Capture input values in error logs (but redact PII!)
+
+### Pattern 3: API/Web Service Integration
+
+**When to use:** Project has `plumber.R` or REST API patterns
+
+**Integration steps:**
+
+```r
+library(plumber)
+library(logthis)
+
+# 1. Create global logger
+log_api <- logger() %>%
+  with_middleware(
+    # Add system context
+    middleware(function(event) {
+      event$hostname <- Sys.info()["nodename"]
+      event$app <- "my-api"
+      event
+    })
+  ) %>%
+  with_receivers(
+    to_console(lower = WARNING),
+    to_json() %>% on_local("logs/api.jsonl")
+  )
+
+# 2. Add plumber filter for request logging
+#* @filter logger
+function(req, res) {
+  # Generate request ID
+  req$request_id <- paste0("REQ-", format(Sys.time(), "%Y%m%d%H%M%S"), "-",
+                           sample(1000:9999, 1))
+
+  log_api(NOTE(
+    "Request received",
+    request_id = req$request_id,
+    method = req$REQUEST_METHOD,
+    path = req$PATH_INFO,
+    remote_addr = req$REMOTE_ADDR
+  ))
+
+  # Track timing
+  req$start_time <- Sys.time()
+
+  plumber::forward()
+}
+
+# 3. Add response filter for logging
+#* @filter response_logger
+function(req, res) {
+  # Get response
+  result <- plumber::forward()
+
+  # Calculate duration
+  duration_ms <- as.numeric(Sys.time() - req$start_time) * 1000
+
+  log_api(NOTE(
+    "Request completed",
+    request_id = req$request_id,
+    status = res$status,
+    duration_ms = round(duration_ms, 1)
+  ))
+
+  result
+}
+
+# 4. Add error handler
+#* @filter error_handler
+function(req, res) {
+  tryCatch({
+    plumber::forward()
+  }, error = function(e) {
+    log_api(ERROR(
+      "Request failed",
+      request_id = req$request_id,
+      error = conditionMessage(e),
+      path = req$PATH_INFO
+    ))
+
+    res$status <- 500
+    list(error = "Internal server error")
+  })
+}
+
+# 5. Add logging to endpoints
+#* @get /users/<id>
+function(id) {
+  log_api(DEBUG("Fetching user", user_id = id))
+
+  user <- fetch_user(id)
+
+  if (is.null(user)) {
+    log_api(WARNING("User not found", user_id = id))
+    stop("User not found")
+  }
+
+  log_api(DEBUG("User fetched", user_id = id, username = user$username))
+  user
+}
+
+#* @post /users
+function(req, name, email) {
+  log_api(NOTE(
+    "Creating user",
+    name = name,
+    email = email
+  ))
+
+  tryCatch({
+    user <- create_user(name, email)
+
+    log_api(NOTE(
+      "User created",
+      user_id = user$id,
+      name = name
+    ))
+
+    user
+  }, error = function(e) {
+    log_api(ERROR(
+      "User creation failed",
+      error = conditionMessage(e),
+      name = name,
+      email = email
+    ))
+
+    stop(e)
+  })
+}
+```
+
+**Key considerations:**
+- Use plumber filters for request/response logging
+- Add request ID for tracing
+- Track timing (duration_ms)
+- Log errors with context
+- Use appropriate levels (DEBUG for internal, NOTE for requests, ERROR for failures)
+
+### Pattern 4: Data Analysis Script Integration
+
+**When to use:** Single `.R` script for data analysis
+
+**Integration steps:**
+
+```r
+# 1. Load logthis at top of script
+library(logthis)
+
+# 2. Create logger
+log_this <- logger() %>%
+  with_receivers(
+    to_console(lower = NOTE),
+    to_json() %>% on_local("analysis.jsonl")
+  )
+
+# 3. Log script start
+log_this(NOTE("Analysis script started"))
+
+# 4. Log major steps
+log_this(NOTE("Loading data"))
+start_time <- Sys.time()
+data <- readRDS("data/input.rds")
+load_duration <- as.numeric(Sys.time() - start_time)
+
+log_this(NOTE(
+  "Data loaded",
+  rows = nrow(data),
+  cols = ncol(data),
+  duration_seconds = round(load_duration, 2)
+))
+
+# 5. Log transformations
+log_this(NOTE("Cleaning data"))
+data_clean <- data %>%
+  filter(!is.na(value)) %>%
+  mutate(value_log = log(value))
+
+log_this(NOTE(
+  "Data cleaned",
+  rows_removed = nrow(data) - nrow(data_clean),
+  pct_kept = round(nrow(data_clean) / nrow(data) * 100, 1)
+))
+
+# 6. Log analysis steps
+log_this(NOTE("Running statistical tests"))
+model <- lm(y ~ x, data = data_clean)
+
+log_this(NOTE(
+  "Model fitted",
+  r_squared = summary(model)$r.squared,
+  p_value = summary(model)$coefficients[2, 4]
+))
+
+# 7. Log warnings/errors
+if (summary(model)$r.squared < 0.5) {
+  log_this(WARNING(
+    "Poor model fit",
+    r_squared = summary(model)$r.squared
+  ))
+}
+
+# 8. Log completion
+log_this(NOTE("Analysis complete"))
+```
+
+**Key considerations:**
+- Initialize logger at top of script
+- Log major steps (load, clean, analyze, save)
+- Include data dimensions (rows, cols)
+- Track timing for long operations
+- Log model results and diagnostics
+- Warn on unexpected results
+
+### Pattern 5: Batch Processing Integration
+
+**When to use:** Long-running batch jobs, ETL pipelines
+
+**Integration steps:**
+
+```r
+library(logthis)
+
+# 1. Create high-performance logger
+library(mirai)
+mirai::daemons(2)  # Async workers
+
+log_batch <- logger() %>%
+  with_middleware(
+    # Sample DEBUG aggressively
+    sample_by_level(debug_rate = 0.01, note_rate = 0.1)
+  ) %>%
+  with_receivers(
+    to_console(lower = WARNING),
+
+    # Async + buffered for performance
+    to_json() %>%
+      on_local("logs/batch.jsonl") %>%
+      as_async(flush_threshold = 1000)
+  )
+
+# 2. Log batch start
+log_batch(NOTE(
+  "Batch job started",
+  job_id = Sys.getenv("JOB_ID"),
+  input_files = length(input_files)
+))
+
+# 3. Log progress
+process_files <- function(files) {
+  total <- length(files)
+
+  for (i in seq_along(files)) {
+    file <- files[i]
+
+    # Log every 10%
+    if (i %% ceiling(total / 10) == 0) {
+      log_batch(NOTE(
+        "Processing progress",
+        completed = i,
+        total = total,
+        pct = round(i / total * 100, 1)
+      ))
+    }
+
+    tryCatch({
+      process_file(file)
+    }, error = function(e) {
+      log_batch(ERROR(
+        "File processing failed",
+        file = file,
+        error = conditionMessage(e)
+      ))
+    })
+  }
+}
+
+process_files(input_files)
+
+# 4. Log summary
+log_batch(NOTE(
+  "Batch job completed",
+  files_processed = length(input_files),
+  duration_minutes = round(elapsed_time / 60, 1)
+))
+
+# 5. Flush before exit
+flush_all_loggers()
+```
+
+**Key considerations:**
+- Use async + buffering for performance
+- Sample DEBUG logs aggressively
+- Log progress every N%
+- Track individual file failures
+- Log summary statistics
+- **Always flush before exit!**
+
+## Integration Checklist
+
+Use this checklist to verify complete integration:
+
+### General
+- [ ] logthis added to dependencies (`DESCRIPTION` for packages)
+- [ ] Logger initialized before first use
+- [ ] Appropriate receivers for environment (console for dev, file/cloud for prod)
+- [ ] Log levels configured (DEBUG in dev, WARNING in prod)
+
+### Package-Specific
+- [ ] Logger created in `.onLoad()`
+- [ ] Configuration function exported
+- [ ] Main functions log events
+- [ ] Error handling logs failures
+- [ ] Documentation mentions logging
+
+### Shiny-Specific
+- [ ] Logger created per session (in `server()`)
+- [ ] Session context middleware added
+- [ ] Alert panel added to UI (if user-facing)
+- [ ] Session lifecycle logged
+- [ ] Input validation logs warnings
+
+### API-Specific
+- [ ] Request logging filter added
+- [ ] Response logging filter added
+- [ ] Error handler logs failures
+- [ ] Request ID generated and tracked
+- [ ] Timing tracked (duration_ms)
+
+### Script-Specific
+- [ ] Logger initialized at top
+- [ ] Major steps logged
+- [ ] Data dimensions logged
+- [ ] Timing tracked for long operations
+- [ ] Results logged
+
+### Batch-Specific
+- [ ] Async + buffering enabled
+- [ ] Progress logged
+- [ ] Individual failures logged
+- [ ] Summary logged
+- [ ] `flush_all_loggers()` called before exit
+
+## Common Pitfalls (For AI Assistants)
+
+### Pitfall 1: Logger Not Initialized
+
+**Problem:**
+```r
+# Logger used before creation
+log_this(NOTE("Event"))  # Error: object 'log_this' not found
+```
+
+**Solution:**
+```r
+# Initialize first
+log_this <- logger() %>%
+  with_receivers(to_console())
+
+log_this(NOTE("Event"))  # Works
+```
+
+### Pitfall 2: Package Logger in Wrong Scope
+
+**Problem:**
+```r
+# Created in function (not persistent)
+my_function <- function() {
+  .pkg_log <- logger() %>% with_receivers(to_console())
+  .pkg_log(NOTE("Event"))
+}
+```
+
+**Solution:**
+```r
+# Create in .onLoad (package-level)
+.pkg_log <- NULL
+
+.onLoad <- function(libname, pkgname) {
+  .pkg_log <<- logger() %>%
+    with_receivers(to_console(lower = WARNING))
+}
+```
+
+### Pitfall 3: Shiny Logger in Wrong Scope
+
+**Problem:**
+```r
+# Global logger (shared across sessions!)
+log_this <- logger() %>% with_receivers(to_console())
+
+server <- function(input, output, session) {
+  log_this(NOTE("Session started"))  # Same logger for all users!
+}
+```
+
+**Solution:**
+```r
+# Per-session logger
+server <- function(input, output, session) {
+  log_this <- logger() %>%
+    with_middleware(add_shiny_session(session)) %>%
+    with_receivers(to_console())
+
+  log_this(NOTE("Session started"))  # Isolated per user
+}
+```
+
+### Pitfall 4: Forgetting to Flush Async Loggers
+
+**Problem:**
+```r
+# Async logger in script
+log_this <- logger() %>%
+  with_receivers(
+    to_json() %>% on_local("app.jsonl") %>% as_async()
+  )
+
+log_this(NOTE("Event"))
+# Script exits, queued events lost!
+```
+
+**Solution:**
+```r
+log_this <- logger() %>%
+  with_receivers(
+    to_json() %>% on_local("app.jsonl") %>% as_async()
+  )
+
+log_this(NOTE("Event"))
+
+# Flush before exit
+flush_all_loggers()
+```
+
+### Pitfall 5: Using DEBUG in Production
+
+**Problem:**
+```r
+# Too verbose in production
+log_this <- logger() %>%
+  with_receivers(to_console(lower = DEBUG))
+
+# Thousands of DEBUG events spam console
+```
+
+**Solution:**
+```r
+# Environment-aware level
+env <- Sys.getenv("ENVIRONMENT", "production")
+
+level <- if (env == "development") DEBUG else WARNING
+
+log_this <- logger() %>%
+  with_receivers(to_console(lower = level))
+```
+
+## Validation Prompts (For Humans)
+
+After AI integration, verify with these prompts:
+
+### Basic Functionality
+```
+"Show me the logger initialization code.
+Verify it's created before use."
+```
+
+### Receiver Configuration
+```
+"What receivers are configured?
+Are they appropriate for my environment (dev/prod)?"
+```
+
+### Context Capture
+```
+"What context is captured in log events?
+Show me middleware configuration."
+```
+
+### Error Handling
+```
+"Show me how errors are logged.
+Are errors caught and logged properly?"
+```
+
+### Performance
+```
+"Is async logging enabled for high-volume receivers?
+What are the flush thresholds?"
+```
+
+## Advanced: Custom Integration Requests
+
+### Request 1: Add GxP Compliance
+
+```
+"Add GxP-compliant logging to my Shiny app:
+- Capture user ID and timestamp (ISO 8601)
+- Log all data access and modifications
+- Immutable audit trail (JSONL)
+- 7-year retention
+Use GxP pattern from vignette('ai-integration')."
+```
+
+**AI Assistant should:**
+- Add user authentication context middleware
+- Log all data reads/writes with tags `audit`, `GxP`, `21CFR11`
+- Use JSONL format for immutability
+- Add timestamp_iso field
+- Configure retention policy
+
+### Request 2: Add Performance Monitoring
+
+```
+"Add performance monitoring to my API:
+- Track request duration
+- Escalate slow requests (>1s) to WARNING
+- Log 95th percentile latency every hour
+Use performance pattern from vignette('ai-integration')."
+```
+
+**AI Assistant should:**
+- Add timing middleware
+- Add performance classification middleware
+- Create hourly metrics reporter
+- Log aggregated statistics
+
+### Request 3: Add Distributed Tracing
+
+```
+"Add distributed tracing to my microservices:
+- Generate trace ID for each request
+- Propagate trace ID across services
+- Log trace ID with all events
+Use tracing pattern from vignette('ai-integration')."
+```
+
+**AI Assistant should:**
+- Generate trace IDs (UUID)
+- Add trace ID middleware
+- Propagate via HTTP headers
+- Include in all log events
+
+## See Also
+
+- `vignette("getting-started")` - Introduction to logthis
+- `vignette("package-development")` - R package integration
+- `vignette("shiny-logging")` - Shiny application logging
+- `vignette("production")` - Production deployment
+
+## Summary
+
+**For humans using AI assistants:**
+
+- Point AI to this vignette for structured integration
+- Specify project type and requirements clearly
+- Use validation prompts to verify integration
+
+**For AI assistants:**
+
+- Detect project type automatically
+- Apply appropriate integration pattern
+- Follow checklist for completeness
+- Avoid common pitfalls
+- Provide clear code with comments
+
+This vignette bridges human intent and AI execution for seamless logthis integration.

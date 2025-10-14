@@ -1,0 +1,1021 @@
+---
+title: "Production Deployment Guide"
+author: "logthis Team"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Production Deployment Guide}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval = FALSE
+)
+library(logthis)
+```
+
+## Introduction
+
+Deploying logthis to production requires careful consideration of log rotation, retention policies, centralized logging, monitoring, and security. This vignette covers production-ready patterns and best practices.
+
+Topics covered:
+
+- Environment-specific configuration
+- Log rotation and archival
+- Centralized logging (ELK, Splunk, CloudWatch)
+- Monitoring and alerting
+- Security and compliance
+- Log retention policies
+- Disaster recovery
+- Performance at scale
+
+## Environment-Specific Configuration
+
+### Configuration Pattern
+
+Use environment variables to control logging behavior:
+
+```{r}
+#' Create environment-aware logger
+#'
+#' @param app_name Application name
+#' @param app_version Application version
+#' @return Configured logger
+create_production_logger <- function(app_name, app_version) {
+  env <- Sys.getenv("ENVIRONMENT", "development")
+  log_level <- Sys.getenv("LOG_LEVEL", "WARNING")
+
+  # Parse log level
+  level <- switch(log_level,
+    "DEBUG" = DEBUG,
+    "NOTE" = NOTE,
+    "MESSAGE" = MESSAGE,
+    "WARNING" = WARNING,
+    "ERROR" = ERROR,
+    "CRITICAL" = CRITICAL,
+    WARNING  # Default
+  )
+
+  # Base logger with common middleware
+  base_logger <- logger() %>%
+    with_middleware(
+      add_system_context,
+      add_app_context(
+        app_name = app_name,
+        app_version = app_version,
+        environment = env
+      )
+    ) %>%
+    with_tags(app = app_name, environment = env)
+
+  # Environment-specific receivers
+  if (env == "production") {
+    base_logger %>%
+      with_middleware(
+        # Security: redact PII in production
+        redact_ssn,
+        redact_credit_cards,
+
+        # Performance: sample DEBUG aggressively
+        sample_by_level(debug_rate = 0.01, note_rate = 0.1)
+      ) %>%
+      with_receivers(
+        # Console: errors only
+        to_console(lower = ERROR),
+
+        # S3: all events (async, buffered)
+        to_json() %>%
+          on_s3(
+            bucket = Sys.getenv("LOG_BUCKET"),
+            key = paste0(app_name, "/", Sys.Date(), "/events.jsonl")
+          ) %>%
+          as_async(flush_threshold = 1000),
+
+        # CloudWatch: errors and above
+        to_cloudwatch(
+          log_group = paste0("/aws/", app_name),
+          log_stream = paste0(Sys.info()["nodename"], "/", Sys.Date()),
+          lower = ERROR
+        )
+      )
+  } else if (env == "staging") {
+    base_logger %>%
+      with_receivers(
+        # Console: warnings and above
+        to_console(lower = WARNING),
+
+        # Local files: all events
+        to_json() %>% on_local("logs/staging.jsonl"),
+        to_text() %>% on_local("logs/staging.log")
+      )
+  } else {
+    # Development
+    base_logger %>%
+      with_receivers(
+        # Console: all events
+        to_console(lower = DEBUG),
+
+        # Local files
+        to_json() %>% on_local("logs/dev.jsonl")
+      )
+  }
+}
+
+# Initialize at app start
+log_this <- create_production_logger(
+  app_name = "my-api",
+  app_version = packageVersion("myapi")
+)
+```
+
+### Environment Variables
+
+Define logging configuration via environment:
+
+```bash
+# Production
+export ENVIRONMENT=production
+export LOG_LEVEL=WARNING
+export LOG_BUCKET=my-company-logs-prod
+export LOG_RETENTION_DAYS=90
+
+# Staging
+export ENVIRONMENT=staging
+export LOG_LEVEL=NOTE
+export LOG_RETENTION_DAYS=30
+
+# Development
+export ENVIRONMENT=development
+export LOG_LEVEL=DEBUG
+```
+
+## Log Rotation and Archival
+
+### File-Based Rotation
+
+Use `to_text_file()` built-in rotation:
+
+```{r}
+log_this <- logger() %>%
+  with_receivers(
+    to_text_file(
+      path = "logs/app.log",
+      max_size = 10 * 1024 * 1024,  # 10 MB
+      max_files = 10                 # Keep 10 rotated files
+    )
+  )
+
+# Rotation behavior:
+# logs/app.log       (current)
+# logs/app.log.1     (most recent rotation)
+# logs/app.log.2
+# ...
+# logs/app.log.10    (oldest, will be deleted on next rotation)
+```
+
+### Time-Based Rotation
+
+Rotate logs daily using filename patterns:
+
+```{r}
+#' Create daily log file path
+#' @return Path with date suffix
+daily_log_path <- function(app_name) {
+  log_dir <- file.path("logs", app_name)
+  if (!dir.exists(log_dir)) {
+    dir.create(log_dir, recursive = TRUE)
+  }
+
+  file.path(log_dir, paste0(Sys.Date(), ".log"))
+}
+
+# Create logger with daily rotation
+log_this <- logger() %>%
+  with_receivers(
+    to_text() %>% on_local(daily_log_path("my-api"))
+  )
+
+# Results in:
+# logs/my-api/2025-01-15.log
+# logs/my-api/2025-01-16.log
+# logs/my-api/2025-01-17.log
+```
+
+### Hourly Rotation (High-Volume)
+
+For high-volume applications:
+
+```{r}
+hourly_log_path <- function(app_name) {
+  timestamp <- format(Sys.time(), "%Y-%m-%d_%H")
+  log_dir <- file.path("logs", app_name, Sys.Date())
+
+  if (!dir.exists(log_dir)) {
+    dir.create(log_dir, recursive = TRUE)
+  }
+
+  file.path(log_dir, paste0(timestamp, ".jsonl"))
+}
+
+log_this <- logger() %>%
+  with_receivers(
+    to_json() %>% on_local(hourly_log_path("my-api"))
+  )
+
+# Results in:
+# logs/my-api/2025-01-15/2025-01-15_09.jsonl
+# logs/my-api/2025-01-15/2025-01-15_10.jsonl
+# logs/my-api/2025-01-15/2025-01-15_11.jsonl
+```
+
+### Archival to Cloud Storage
+
+Archive old logs to S3/Azure:
+
+```{r}
+#' Archive old log files to S3
+#'
+#' @param log_dir Local log directory
+#' @param bucket S3 bucket
+#' @param age_days Archive files older than this
+archive_logs_to_s3 <- function(log_dir, bucket, age_days = 7) {
+  # Find old log files
+  log_files <- list.files(
+    log_dir,
+    pattern = "\\.log$|\\.jsonl$",
+    full.names = TRUE,
+    recursive = TRUE
+  )
+
+  cutoff_time <- Sys.time() - (age_days * 86400)
+
+  for (file_path in log_files) {
+    file_info <- file.info(file_path)
+
+    if (file_info$mtime < cutoff_time) {
+      # Upload to S3
+      s3_key <- paste0(
+        "archived-logs/",
+        format(file_info$mtime, "%Y/%m/%d/"),
+        basename(file_path)
+      )
+
+      cat("Archiving", file_path, "to S3:", s3_key, "\n")
+
+      # Upload (using aws.s3 or paws package)
+      aws.s3::put_object(
+        file = file_path,
+        object = s3_key,
+        bucket = bucket
+      )
+
+      # Delete local file after successful upload
+      unlink(file_path)
+    }
+  }
+}
+
+# Run daily (e.g., in cron job)
+archive_logs_to_s3(
+  log_dir = "logs",
+  bucket = "my-company-logs",
+  age_days = 7
+)
+```
+
+## Centralized Logging
+
+### ELK Stack (Elasticsearch, Logstash, Kibana)
+
+#### Option 1: Direct to Elasticsearch
+
+```{r}
+#' Send logs to Elasticsearch
+#'
+#' @param host Elasticsearch host
+#' @param port Elasticsearch port
+#' @param index Index name
+to_elasticsearch <- function(host = "localhost",
+                             port = 9200,
+                             index = "logs",
+                             lower = LOWEST,
+                             upper = HIGHEST) {
+  # Build base URL
+  base_url <- paste0("http://", host, ":", port)
+
+  receiver(function(event) {
+    # Level filtering
+    if (event$level_number < attr(lower, "level_number") ||
+        event$level_number > attr(upper, "level_number")) {
+      return(invisible(NULL))
+    }
+
+    # Convert event to JSON
+    doc <- jsonlite::toJSON(
+      list(
+        timestamp = format(event$time, "%Y-%m-%dT%H:%M:%S%z"),
+        level = event$level_class,
+        message = event$message,
+        tags = event$tags,
+        fields = event[!names(event) %in% c("time", "level_class", "message", "tags")]
+      ),
+      auto_unbox = TRUE
+    )
+
+    # Index document
+    url <- paste0(base_url, "/", index, "/_doc")
+
+    tryCatch({
+      httr::POST(
+        url,
+        body = doc,
+        httr::content_type_json(),
+        httr::timeout(5)
+      )
+    }, error = function(e) {
+      warning("Failed to send to Elasticsearch: ", conditionMessage(e))
+    })
+
+    invisible(NULL)
+  })
+}
+
+# Usage
+log_this <- logger() %>%
+  with_receivers(
+    to_elasticsearch(
+      host = "elasticsearch.company.com",
+      port = 9200,
+      index = "my-app-logs"
+    )
+  )
+```
+
+#### Option 2: Via Logstash (File Shipping)
+
+Write logs to file, let Logstash ship to Elasticsearch:
+
+```{r}
+# logthis writes to local JSONL
+log_this <- logger() %>%
+  with_receivers(
+    to_json() %>% on_local("/var/log/my-app/app.jsonl")
+  )
+
+# Logstash config (logstash.conf):
+# input {
+#   file {
+#     path => "/var/log/my-app/*.jsonl"
+#     codec => "json"
+#     type => "my-app"
+#   }
+# }
+#
+# filter {
+#   # Add custom fields, transformations
+# }
+#
+# output {
+#   elasticsearch {
+#     hosts => ["elasticsearch:9200"]
+#     index => "my-app-logs-%{+YYYY.MM.dd}"
+#   }
+# }
+```
+
+### Splunk
+
+```{r}
+#' Send logs to Splunk HTTP Event Collector (HEC)
+#'
+#' @param hec_url HEC URL
+#' @param hec_token Authentication token
+to_splunk <- function(hec_url, hec_token,
+                      lower = LOWEST, upper = HIGHEST) {
+  receiver(function(event) {
+    # Level filtering
+    if (event$level_number < attr(lower, "level_number") ||
+        event$level_number > attr(upper, "level_number")) {
+      return(invisible(NULL))
+    }
+
+    # Splunk event format
+    splunk_event <- list(
+      time = as.numeric(event$time),
+      host = Sys.info()["nodename"],
+      source = "logthis",
+      sourcetype = "_json",
+      event = list(
+        level = event$level_class,
+        message = event$message,
+        tags = event$tags,
+        fields = event[!names(event) %in% c("time", "level_class", "message", "tags")]
+      )
+    )
+
+    json_body <- jsonlite::toJSON(splunk_event, auto_unbox = TRUE)
+
+    tryCatch({
+      httr::POST(
+        hec_url,
+        httr::add_headers(Authorization = paste("Splunk", hec_token)),
+        body = json_body,
+        httr::content_type_json(),
+        httr::timeout(5)
+      )
+    }, error = function(e) {
+      warning("Failed to send to Splunk: ", conditionMessage(e))
+    })
+
+    invisible(NULL)
+  })
+}
+
+# Usage
+log_this <- logger() %>%
+  with_receivers(
+    to_splunk(
+      hec_url = "https://splunk.company.com:8088/services/collector",
+      hec_token = Sys.getenv("SPLUNK_HEC_TOKEN")
+    )
+  )
+```
+
+### AWS CloudWatch
+
+```{r}
+#' Send logs to AWS CloudWatch
+#'
+#' @param log_group CloudWatch log group
+#' @param log_stream CloudWatch log stream
+to_cloudwatch <- function(log_group, log_stream,
+                          region = "us-east-1",
+                          lower = LOWEST, upper = HIGHEST) {
+  # Initialize AWS client (using paws package)
+  if (!requireNamespace("paws", quietly = TRUE)) {
+    stop("Package 'paws' required for CloudWatch logging")
+  }
+
+  cw <- paws::cloudwatchlogs(config = list(region = region))
+
+  # Create log group/stream if needed
+  tryCatch({
+    cw$create_log_group(logGroupName = log_group)
+  }, error = function(e) {})
+
+  tryCatch({
+    cw$create_log_stream(
+      logGroupName = log_group,
+      logStreamName = log_stream
+    )
+  }, error = function(e) {})
+
+  receiver(function(event) {
+    # Level filtering
+    if (event$level_number < attr(lower, "level_number") ||
+        event$level_number > attr(upper, "level_number")) {
+      return(invisible(NULL))
+    }
+
+    # CloudWatch expects specific format
+    log_event <- list(
+      timestamp = as.numeric(event$time) * 1000,  # Milliseconds
+      message = jsonlite::toJSON(event, auto_unbox = TRUE)
+    )
+
+    tryCatch({
+      cw$put_log_events(
+        logGroupName = log_group,
+        logStreamName = log_stream,
+        logEvents = list(log_event)
+      )
+    }, error = function(e) {
+      warning("Failed to send to CloudWatch: ", conditionMessage(e))
+    })
+
+    invisible(NULL)
+  })
+}
+
+# Usage
+log_this <- logger() %>%
+  with_receivers(
+    to_cloudwatch(
+      log_group = "/aws/my-app",
+      log_stream = paste0(Sys.info()["nodename"], "/", Sys.Date())
+    )
+  )
+```
+
+### Google Cloud Logging (Stackdriver)
+
+```{r}
+#' Send logs to Google Cloud Logging
+#'
+#' @param project_id GCP project ID
+#' @param log_name Log name
+to_google_cloud_logging <- function(project_id, log_name,
+                                    lower = LOWEST, upper = HIGHEST) {
+  if (!requireNamespace("googleCloudLoggingR", quietly = TRUE)) {
+    stop("Package 'googleCloudLoggingR' required")
+  }
+
+  receiver(function(event) {
+    # Level filtering
+    if (event$level_number < attr(lower, "level_number") ||
+        event$level_number > attr(upper, "level_number")) {
+      return(invisible(NULL))
+    }
+
+    # Map logthis levels to Cloud Logging severity
+    severity <- if (event$level_number >= 90) {
+      "CRITICAL"
+    } else if (event$level_number >= 80) {
+      "ERROR"
+    } else if (event$level_number >= 60) {
+      "WARNING"
+    } else if (event$level_number >= 40) {
+      "INFO"
+    } else {
+      "DEBUG"
+    }
+
+    googleCloudLoggingR::gce_log_write(
+      log_name = log_name,
+      project_id = project_id,
+      severity = severity,
+      message = event$message,
+      labels = list(
+        app = event$app_name %||% "unknown",
+        environment = event$environment %||% "production"
+      ),
+      jsonPayload = event
+    )
+
+    invisible(NULL)
+  })
+}
+```
+
+## Monitoring and Alerting
+
+### Metrics Extraction
+
+Extract metrics from logs for monitoring:
+
+```{r}
+#' Middleware to track metrics
+add_metrics <- function() {
+  # Closure state for metrics
+  error_count <- 0
+  warning_count <- 0
+  request_count <- 0
+
+  middleware(function(event) {
+    # Increment counters
+    if (event$level_class == "ERROR") {
+      error_count <<- error_count + 1
+    } else if (event$level_class == "WARNING") {
+      warning_count <<- warning_count + 1
+    }
+
+    if (!is.null(event$request_id)) {
+      request_count <<- request_count + 1
+    }
+
+    # Attach metrics to event
+    event$metrics <- list(
+      error_count = error_count,
+      warning_count = warning_count,
+      request_count = request_count
+    )
+
+    event
+  })
+}
+
+# Periodic metrics reporting
+report_metrics <- function() {
+  log_this(NOTE(
+    "Metrics report",
+    errors_per_hour = error_count / uptime_hours,
+    warnings_per_hour = warning_count / uptime_hours,
+    requests_per_second = request_count / uptime_seconds
+  ))
+}
+
+# Schedule with later package
+later::later(report_metrics, delay = 3600)  # Every hour
+```
+
+### Health Checks
+
+Use logging for health monitoring:
+
+```{r}
+#' Health check function
+health_check <- function() {
+  checks <- list()
+
+  # Check database
+  checks$database <- tryCatch({
+    DBI::dbGetQuery(db, "SELECT 1")
+    "healthy"
+  }, error = function(e) {
+    log_this(ERROR("Database health check failed", error = conditionMessage(e)))
+    "unhealthy"
+  })
+
+  # Check external API
+  checks$api <- tryCatch({
+    response <- httr::GET("https://api.example.com/health")
+    if (response$status_code == 200) "healthy" else "degraded"
+  }, error = function(e) {
+    log_this(ERROR("API health check failed", error = conditionMessage(e)))
+    "unhealthy"
+  })
+
+  # Overall status
+  overall <- if (all(unlist(checks) == "healthy")) {
+    "healthy"
+  } else if (any(unlist(checks) == "unhealthy")) {
+    "unhealthy"
+  } else {
+    "degraded"
+  }
+
+  log_this(NOTE(
+    "Health check complete",
+    status = overall,
+    checks = checks
+  ))
+
+  list(status = overall, checks = checks)
+}
+
+# Expose as HTTP endpoint (using plumber)
+#* @get /health
+health_endpoint <- function() {
+  health_check()
+}
+```
+
+### Alerting on Critical Events
+
+Send alerts to PagerDuty/Slack when critical errors occur:
+
+```{r}
+#' Middleware to send alerts
+alert_on_critical <- function(pagerduty_key) {
+  middleware(function(event) {
+    # Alert on CRITICAL events
+    if (event$level_class == "CRITICAL") {
+      # Send to PagerDuty
+      tryCatch({
+        httr::POST(
+          "https://events.pagerduty.com/v2/enqueue",
+          body = jsonlite::toJSON(list(
+            routing_key = pagerduty_key,
+            event_action = "trigger",
+            payload = list(
+              summary = event$message,
+              severity = "critical",
+              source = Sys.info()["nodename"],
+              custom_details = event
+            )
+          ), auto_unbox = TRUE),
+          httr::content_type_json()
+        )
+      }, error = function(e) {
+        warning("Failed to send alert: ", conditionMessage(e))
+      })
+    }
+
+    event
+  })
+}
+
+log_this <- logger() %>%
+  with_middleware(
+    alert_on_critical(Sys.getenv("PAGERDUTY_KEY"))
+  ) %>%
+  with_receivers(to_console())
+```
+
+## Security and Compliance
+
+### PII Redaction
+
+Redact sensitive information before logging:
+
+```{r}
+redact_all_pii <- function() {
+  middleware(function(event) {
+    # Redact SSN
+    event$message <- gsub(
+      "\\b\\d{3}-?\\d{2}-?\\d{4}\\b",
+      "***-**-****",
+      event$message
+    )
+
+    # Redact credit cards
+    event$message <- gsub(
+      "\\b\\d{4}[\\s-]?\\d{4}[\\s-]?\\d{4}[\\s-]?\\d{4}\\b",
+      "****-****-****-****",
+      event$message
+    )
+
+    # Redact email addresses
+    event$message <- gsub(
+      "\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\\b",
+      "***@***.***",
+      event$message
+    )
+
+    # Redact IP addresses (optional)
+    event$message <- gsub(
+      "\\b\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\b",
+      "***.***.***.***",
+      event$message
+    )
+
+    event
+  })
+}
+
+log_this <- logger() %>%
+  with_middleware(redact_all_pii()) %>%
+  with_receivers(to_console())
+```
+
+### Encryption at Rest
+
+Encrypt log files on disk:
+
+```{r}
+# Use encrypted filesystem (e.g., LUKS, BitLocker)
+# Or encrypt files individually
+
+#' Encrypt log file
+#' @param file_path Path to log file
+#' @param public_key Path to public key
+encrypt_log_file <- function(file_path, public_key) {
+  # Using openssl package
+  data <- readBin(file_path, "raw", file.size(file_path))
+
+  encrypted <- openssl::rsa_encrypt(data, openssl::read_pubkey(public_key))
+
+  writeBin(encrypted, paste0(file_path, ".enc"))
+
+  unlink(file_path)  # Remove plaintext
+}
+
+# Encrypt on rotation
+later::later(function() {
+  log_files <- list.files("logs", pattern = "\\.log$", full.names = TRUE)
+  for (file in log_files) {
+    if (file.info(file)$mtime < Sys.time() - 3600) {  # 1 hour old
+      encrypt_log_file(file, "keys/public.pem")
+    }
+  }
+}, delay = 3600)
+```
+
+### Access Control
+
+Restrict log file permissions:
+
+```{r}
+# Set restrictive permissions on log directory
+Sys.chmod("logs", mode = "0700")  # Owner only
+
+# Set permissions on individual log files
+log_file <- "logs/app.log"
+Sys.chmod(log_file, mode = "0600")  # Owner read/write only
+```
+
+## Log Retention Policies
+
+### Retention by Environment
+
+Different retention for different environments:
+
+```{r}
+RETENTION_DAYS <- list(
+  development = 7,
+  staging = 30,
+  production = 90,
+  audit = 2555  # 7 years for compliance
+)
+
+#' Delete old log files
+#'
+#' @param log_dir Log directory
+#' @param retention_days Keep logs newer than this
+delete_old_logs <- function(log_dir, retention_days) {
+  cutoff_time <- Sys.time() - (retention_days * 86400)
+
+  log_files <- list.files(
+    log_dir,
+    pattern = "\\.log$|\\.jsonl$",
+    full.names = TRUE,
+    recursive = TRUE
+  )
+
+  for (file_path in log_files) {
+    file_info <- file.info(file_path)
+
+    if (file_info$mtime < cutoff_time) {
+      cat("Deleting old log:", file_path, "\n")
+      unlink(file_path)
+    }
+  }
+}
+
+# Run daily (cron job)
+env <- Sys.getenv("ENVIRONMENT", "production")
+retention <- RETENTION_DAYS[[env]]
+
+delete_old_logs("logs", retention)
+```
+
+### Compliance Retention (GxP, HIPAA)
+
+For regulated industries:
+
+```{r}
+#' Archive logs with immutable storage
+#'
+#' For compliance (21 CFR Part 11, HIPAA, etc.)
+archive_compliance_logs <- function(log_dir, s3_bucket) {
+  log_files <- list.files(log_dir, full.names = TRUE, recursive = TRUE)
+
+  for (file_path in log_files) {
+    # Upload to S3 with object lock (immutable)
+    s3_key <- paste0(
+      "compliance-logs/",
+      format(file.info(file_path)$mtime, "%Y/%m/%d/"),
+      basename(file_path)
+    )
+
+    aws.s3::put_object(
+      file = file_path,
+      object = s3_key,
+      bucket = s3_bucket,
+      headers = list(
+        "x-amz-object-lock-mode" = "COMPLIANCE",
+        "x-amz-object-lock-retain-until-date" = format(
+          Sys.Date() + (7 * 365),  # 7 years
+          "%Y-%m-%dT%H:%M:%SZ"
+        )
+      )
+    )
+
+    # Verify upload
+    if (aws.s3::object_exists(s3_key, s3_bucket)) {
+      unlink(file_path)
+    }
+  }
+}
+```
+
+## Disaster Recovery
+
+### Log Replication
+
+Replicate logs to multiple locations:
+
+```{r}
+log_this <- logger() %>%
+  with_receivers(
+    # Primary: local disk
+    to_json() %>% on_local("logs/app.jsonl"),
+
+    # Backup 1: S3 (different region)
+    to_json() %>% on_s3(
+      bucket = "logs-us-west-2",
+      key = paste0("app/", Sys.Date(), ".jsonl")
+    ),
+
+    # Backup 2: S3 (another region)
+    to_json() %>% on_s3(
+      bucket = "logs-eu-west-1",
+      key = paste0("app/", Sys.Date(), ".jsonl")
+    )
+  )
+```
+
+### Log Recovery
+
+Restore logs from backup:
+
+```{r}
+#' Restore logs from S3
+#'
+#' @param s3_bucket S3 bucket
+#' @param s3_prefix Key prefix
+#' @param local_dir Local directory
+restore_logs_from_s3 <- function(s3_bucket, s3_prefix, local_dir) {
+  # List objects in S3
+  objects <- aws.s3::get_bucket(s3_bucket, prefix = s3_prefix)
+
+  for (obj in objects) {
+    s3_key <- obj$Key
+    local_path <- file.path(local_dir, basename(s3_key))
+
+    # Download
+    aws.s3::save_object(
+      object = s3_key,
+      bucket = s3_bucket,
+      file = local_path
+    )
+
+    cat("Restored:", local_path, "\n")
+  }
+}
+```
+
+## Performance at Scale
+
+### Multi-Receiver Strategy
+
+Optimize for high-volume production:
+
+```{r}
+library(mirai)
+mirai::daemons(4)  # 4 async workers
+
+log_this <- logger() %>%
+  with_middleware(
+    # Sample DEBUG aggressively (99% reduction)
+    sample_by_level(debug_rate = 0.01, note_rate = 0.1)
+  ) %>%
+  with_receivers(
+    # Console: errors only (sync)
+    to_console(lower = ERROR),
+
+    # S3: all events (async, large buffer)
+    to_json() %>%
+      on_s3(
+        bucket = Sys.getenv("LOG_BUCKET"),
+        key = paste0("app/", Sys.Date(), "/events.jsonl")
+      ) %>%
+      as_async(flush_threshold = 5000),
+
+    # CloudWatch: errors (async)
+    to_cloudwatch(
+      log_group = "/aws/my-app",
+      log_stream = paste0(Sys.info()["nodename"], "/", Sys.Date()),
+      lower = ERROR
+    ) %>% as_async(flush_threshold = 100),
+
+    # Local backup: all events (async)
+    to_json() %>%
+      on_local("logs/backup.jsonl") %>%
+      as_async(flush_threshold = 1000)
+  )
+```
+
+**Expected performance:**
+
+- 50k-100k events/sec throughput
+- 50-200 µs latency per event
+- 99% DEBUG reduction via sampling
+- Multi-region replication
+
+## Best Practices Summary
+
+1. **Environment-aware configuration** - Use env vars for settings
+2. **Rotate logs regularly** - Prevent disk space issues
+3. **Archive to cloud storage** - Long-term retention
+4. **Centralize logs** - Use ELK, Splunk, or CloudWatch
+5. **Monitor and alert** - Track errors, health checks
+6. **Redact PII** - Security and compliance
+7. **Retention policies** - Delete old logs, comply with regulations
+8. **Disaster recovery** - Replicate to multiple locations
+9. **Performance at scale** - Async, buffering, sampling
+10. **Security** - Encryption, access control, audit trails
+
+## See Also
+
+- `vignette("performance")` - Performance optimization
+- `vignette("patterns")` - Common logging patterns
+- `vignette("middleware")` - Middleware for PII redaction
+- `vignette("advanced-receivers")` - Cloud storage receivers
+
+## Summary
+
+Production-ready logging with logthis requires:
+
+- **Environment-specific configuration** via env vars
+- **Log rotation and archival** to manage disk space
+- **Centralized logging** for monitoring and analysis
+- **Security measures** including PII redaction and encryption
+- **Retention policies** for compliance
+- **Disaster recovery** with log replication
+- **Performance optimization** at scale
+
+Use the patterns in this vignette to build robust, scalable, and compliant production logging systems.

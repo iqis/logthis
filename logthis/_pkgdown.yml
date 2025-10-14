@@ -36,20 +36,37 @@ navbar:
     articles:
       text: Articles
       menu:
+      - text: "--- Fundamentals ---"
       - text: Getting Started
         href: articles/getting-started.html
-      - text: Tagging and Provenance
-        href: articles/tagging-and-provenance.html
       - text: Patterns
         href: articles/patterns.html
+      - text: Tagging and Provenance
+        href: articles/tagging-and-provenance.html
+      - text: "--- Advanced Topics ---"
+      - text: Middleware
+        href: articles/middleware.html
+      - text: Shiny Logging
+        href: articles/shiny-logging.html
+      - text: Package Development
+        href: articles/package-development.html
       - text: Advanced Receivers
         href: articles/advanced-receivers.html
+      - text: "--- Operations ---"
+      - text: Performance
+        href: articles/performance.html
+      - text: Production Deployment
+        href: articles/production.html
+      - text: "--- Special Topics ---"
+      - text: GxP Compliance
+        href: articles/gxp-compliance.html
       - text: Python Comparison
         href: articles/python-comparison.html
       - text: Migration Guide
         href: articles/migration-guide.html
-      - text: GxP Compliance
-        href: articles/gxp-compliance.html
+      - text: "--- Tools ---"
+      - text: AI Integration Guide
+        href: articles/ai-integration.html
     news:
       text: Changelog
       href: news/index.html
@@ -182,40 +199,38 @@ reference:
   - with_pipeline_audit
 
 articles:
-- title: Getting Started
-  navbar: ~
+- title: Fundamentals
+  desc: Core concepts and basic usage
   contents:
   - getting-started
-
-- title: Tagging and Provenance
-  navbar: ~
-  contents:
+  - patterns
   - tagging-and-provenance
 
-- title: Patterns
-  navbar: ~
+- title: Advanced Topics
+  desc: Deep dives into specific use cases
   contents:
-  - patterns
-
-- title: Advanced Receivers
-  navbar: ~
-  contents:
+  - middleware
+  - shiny-logging
+  - package-development
   - advanced-receivers
 
-- title: Python Comparison
-  navbar: ~
+- title: Operations
+  desc: Production deployment and optimization
   contents:
-  - python-comparison
+  - performance
+  - production
 
-- title: Migration Guide
-  navbar: ~
-  contents:
-  - migration-guide
-
-- title: GxP Compliance
-  navbar: ~
+- title: Special Topics
+  desc: Compliance, migration, and comparisons
   contents:
   - gxp-compliance
+  - python-comparison
+  - migration-guide
+
+- title: Tools
+  desc: AI-assisted development and integration
+  contents:
+  - ai-integration
 
 news:
   releases:

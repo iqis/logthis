@@ -1,6 +1,6 @@
 # logthis - AI Assistant Context
 
-**Last Updated:** 2025-10-08
+**Last Updated:** 2025-10-14
 **Package Version:** 0.1.0.9000
 **Status:** Production-ready, CRAN submission pending
 
@@ -219,20 +219,65 @@ logger() %>%
 **Test Count:** 130 passing tests
 
 ### Vignettes (vignettes/)
+
+**Fundamentals:**
 - **getting-started.Rmd** - Quick introduction to logthis for new users
-- **tagging-and-provenance.Rmd** - Using tags for context and audit trails
 - **patterns.Rmd** - Common logging patterns and best practices
+- **tagging-and-provenance.Rmd** - Using tags for context and audit trails
+
+**Advanced Topics:**
+- **middleware.Rmd** - Transform events with middleware (PII redaction, sampling, enrichment)
+  - Logger-level vs receiver-level middleware (S3 dispatch)
+  - Common patterns: context enrichment, PII redaction, sampling, performance tracking
+  - Multi-stage pipelines and real-world examples
+- **shiny-logging.Rmd** - Logging in Shiny applications
+  - User-facing alerts (inline panels, modals, toasts)
+  - Session tracking and user identification
+  - Reactive chain debugging and performance monitoring
+  - GxP-compliant Shiny apps
+- **package-development.Rmd** - Integrating logthis into R packages
+  - Package-level logger initialization (`.onLoad()`)
+  - User configuration functions and testing strategies
+  - Performance considerations and namespace management
 - **advanced-receivers.Rmd** - Cloud storage, webhooks, and custom receivers
+  - AWS S3, Azure Blob, webhooks
+  - Custom receiver patterns
+
+**Operations:**
+- **performance.Rmd** - Performance optimization and benchmarking
+  - Benchmarking results and expectations
+  - Buffered vs line-based receivers
+  - Async logging patterns (5-20x speedup)
+  - Hot path optimization and memory management
+  - High-throughput strategies (50k-100k events/sec)
+- **production.Rmd** - Production deployment guide
+  - Environment-specific configuration
+  - Log rotation, archival, and retention policies
+  - Centralized logging (ELK, Splunk, CloudWatch)
+  - Monitoring, alerting, security, and compliance
+
+**Special Topics:**
+- **gxp-compliance.Rmd** - GxP-compliant logging and pharmaceutical validation
+  - 21 CFR Part 11 compliance and ALCOA+ audit trails
+  - Clinical trial data access logging
+  - Manufacturing batch records (GMP compliance)
+  - Pharmacovigilance adverse event reporting
+  - Computer System Validation (CSV) documentation
+  - Electronic signatures and regulatory compliance
 - **python-comparison.Rmd** - Comprehensive comparison with Python logging ecosystem
   - Architecture comparison (logging, loguru, structlog)
   - General audit logging patterns (Django, structlog)
-  - **Pharmaceutical and clinical audit trails** (21 CFR Part 11, ALCOA+, GxP)
-    - Clinical trial data access logging
-    - Manufacturing batch records (GMP compliance)
-    - Pharmacovigilance adverse event reporting
-    - Computer System Validation (CSV) documentation
-    - Electronic signatures and regulatory compliance
+  - Pharmaceutical and clinical audit trails
 - **migration-guide.Rmd** - Migrating from other R logging packages
+  - Migration from log4r, logging, futile.logger
+
+**Tools:**
+- **ai-integration.Rmd** - AI-assisted logthis integration guide
+  - Dual-audience documentation (humans and AI assistants)
+  - Structured prompts for human users
+  - Pattern detection and integration workflows for AI assistants
+  - Integration checklists by project type (package, Shiny, API, script, batch)
+  - Common pitfalls and validation prompts
 
 ## Code Conventions
 
@@ -1071,3 +1116,4 @@ devtools::test()
 - Verify changes don't break the 130 existing tests
 - when formatting, as much as possible, have the first argument to a function call on the same line as the (, and each argument on a new line) is this Lisp style? I like it very much.
 - use function.method(): by which I mean that use appropriate general/method patterns wherever possible.
+- whenever any documentation changes, update existing AI instructions/helpers

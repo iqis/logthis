@@ -1,0 +1,913 @@
+---
+title: "Using logthis in R Package Development"
+author: "logthis Team"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Using logthis in R Package Development}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+library(logthis)
+```
+
+## Introduction
+
+Integrating logging into R packages requires careful consideration of namespace management, user configurability, and performance. This vignette covers best practices for using logthis in R package development.
+
+Topics covered:
+
+- Package-level logger initialization
+- Namespace and import considerations
+- Letting users configure logging
+- Testing code that logs
+- Performance considerations for libraries
+- Internal vs user-facing logging
+- Dependency management
+
+## Quick Start
+
+### Minimal Package Integration
+
+Here's the minimal setup for adding logthis to your R package:
+
+**1. Add to DESCRIPTION:**
+
+```
+Imports:
+    logthis
+```
+
+**2. Create package-level logger (R/zzz.R):**
+
+```{r eval=FALSE}
+# Package-level logger (not exported)
+.pkg_log <- NULL
+
+.onLoad <- function(libname, pkgname) {
+  # Initialize package logger
+  .pkg_log <<- logger() %>%
+    with_tags(package = pkgname) %>%
+    with_receivers(to_console(lower = WARNING))
+
+  invisible()
+}
+```
+
+**3. Use in package functions:**
+
+```{r eval=FALSE}
+#' Your package function
+#' @export
+my_function <- function(x) {
+  .pkg_log(NOTE("Function called", arg_x = class(x)))
+
+  # ... function logic ...
+}
+```
+
+## Package-Level Logger Initialization
+
+### Option 1: Single Package Logger (.onLoad)
+
+**Best for:** Simple packages with consistent logging needs
+
+```{r eval=FALSE}
+# R/zzz.R
+.pkg_log <- NULL
+
+.onLoad <- function(libname, pkgname) {
+  .pkg_log <<- logger() %>%
+    with_tags(package = pkgname, version = packageVersion(pkgname)) %>%
+    with_receivers(
+      to_console(lower = WARNING)  # Only warnings/errors by default
+    )
+
+  invisible()
+}
+
+# Export logger configuration function (optional)
+#' Configure package logging
+#'
+#' @param receivers List of log receivers
+#' @param lower Minimum log level
+#' @export
+configure_logging <- function(receivers = NULL, lower = WARNING) {
+  if (!is.null(receivers)) {
+    .pkg_log <<- logger() %>%
+      with_tags(package = "mypackage") %>%
+      with_receivers(!!!receivers)
+  } else {
+    .pkg_log <<- logger() %>%
+      with_tags(package = "mypackage") %>%
+      with_receivers(to_console(lower = lower))
+  }
+
+  invisible(.pkg_log)
+}
+```
+
+### Option 2: Logger Factory Function
+
+**Best for:** Packages with multiple components or user-configurable logging
+
+```{r eval=FALSE}
+# R/logging.R (internal)
+#' Create package logger
+#'
+#' @param component Component name (e.g., "database", "api")
+#' @param console_level Minimum console level
+#' @return logger
+#' @keywords internal
+.create_logger <- function(component = NULL, console_level = WARNING) {
+  tags <- list(package = "mypackage")
+
+  if (!is.null(component)) {
+    tags$component <- component
+  }
+
+  logger() %>%
+    with_tags(!!!tags) %>%
+    with_receivers(
+      to_console(lower = console_level)
+    )
+}
+
+# Component-specific loggers
+.db_log <- NULL
+.api_log <- NULL
+
+.onLoad <- function(libname, pkgname) {
+  .db_log <<- .create_logger(component = "database")
+  .api_log <<- .create_logger(component = "api")
+
+  invisible()
+}
+```
+
+### Option 3: Lazy Initialization
+
+**Best for:** Packages where logging is rarely used
+
+```{r eval=FALSE}
+# R/logging.R
+.pkg_log <- NULL
+
+#' Get package logger (lazy init)
+#' @keywords internal
+.get_logger <- function() {
+  if (is.null(.pkg_log)) {
+    .pkg_log <<- logger() %>%
+      with_tags(package = "mypackage") %>%
+      with_receivers(to_console(lower = WARNING))
+  }
+
+  .pkg_log
+}
+
+# Usage in package functions
+my_function <- function() {
+  .get_logger()(NOTE("Function called"))
+}
+```
+
+## Namespace and Imports
+
+### NAMESPACE Configuration
+
+**Import logthis functions:**
+
+```{r eval=FALSE}
+# In DESCRIPTION
+Imports:
+    logthis
+
+# In NAMESPACE (or via roxygen2)
+importFrom(logthis, logger)
+importFrom(logthis, NOTE)
+importFrom(logthis, WARNING)
+importFrom(logthis, ERROR)
+importFrom(logthis, to_console)
+importFrom(logthis, with_tags)
+importFrom(logthis, with_receivers)
+```
+
+**Or import entire namespace:**
+
+```{r eval=FALSE}
+# In roxygen2
+#' @import logthis
+```
+
+### Roxygen2 Setup
+
+Use roxygen2 to manage imports:
+
+```{r eval=FALSE}
+# R/mypackage-package.R
+#' @keywords internal
+"_PACKAGE"
+
+#' @importFrom logthis logger NOTE WARNING ERROR to_console with_tags with_receivers
+NULL
+```
+
+Then run: `devtools::document()`
+
+## Letting Users Configure Logging
+
+### Basic Configuration Function
+
+Allow users to control logging behavior:
+
+```{r eval=FALSE}
+#' Configure mypackage logging
+#'
+#' Control logging output for mypackage functions.
+#'
+#' @param level Minimum log level (NOTE, WARNING, ERROR, etc.)
+#' @param file Optional file path for log output
+#' @param console Logical; log to console (default TRUE)
+#' @export
+#' @examples
+#' # Show all logs
+#' mypackage_configure_logging(level = NOTE)
+#'
+#' # Only errors
+#' mypackage_configure_logging(level = ERROR)
+#'
+#' # Log to file
+#' mypackage_configure_logging(level = NOTE, file = "mypackage.log")
+mypackage_configure_logging <- function(level = WARNING,
+                                       file = NULL,
+                                       console = TRUE) {
+  receivers <- list()
+
+  if (console) {
+    receivers[[length(receivers) + 1]] <- to_console(lower = level)
+  }
+
+  if (!is.null(file)) {
+    receivers[[length(receivers) + 1]] <-
+      to_json() %>% on_local(file, lower = level)
+  }
+
+  if (length(receivers) == 0) {
+    receivers[[1]] <- to_console(lower = HIGHEST)  # Effectively disabled
+  }
+
+  .pkg_log <<- logger() %>%
+    with_tags(package = "mypackage") %>%
+    with_receivers(!!!receivers)
+
+  invisible(.pkg_log)
+}
+```
+
+### Advanced Configuration (Custom Receivers)
+
+Let users provide custom receivers:
+
+```{r eval=FALSE}
+#' Advanced logging configuration
+#'
+#' @param receivers List of log receivers (default: console only)
+#' @param middleware List of middleware functions (optional)
+#' @param tags Named list of tags to add to all events
+#' @export
+mypackage_configure_logging_advanced <- function(receivers = NULL,
+                                                 middleware = NULL,
+                                                 tags = NULL) {
+  # Default receivers
+  if (is.null(receivers)) {
+    receivers <- list(to_console(lower = WARNING))
+  }
+
+  # Base logger
+  log <- logger() %>%
+    with_tags(package = "mypackage", !!!tags)
+
+  # Add middleware if provided
+  if (!is.null(middleware)) {
+    log <- log %>% with_middleware(!!!middleware)
+  }
+
+  # Add receivers
+  log <- log %>% with_receivers(!!!receivers)
+
+  .pkg_log <<- log
+
+  invisible(.pkg_log)
+}
+
+# Usage by users:
+# mypackage_configure_logging_advanced(
+#   receivers = list(
+#     to_console(lower = DEBUG),
+#     to_json() %>% on_local("debug.jsonl")
+#   ),
+#   middleware = list(add_system_context),
+#   tags = list(environment = "development")
+# )
+```
+
+## Using Logging in Package Functions
+
+### Internal Function Logging
+
+For internal functions (not exported):
+
+```{r eval=FALSE}
+# R/database.R (internal)
+.connect_to_db <- function(host, port) {
+  .pkg_log(NOTE(
+    "Connecting to database",
+    host = host,
+    port = port
+  ))
+
+  tryCatch({
+    conn <- DBI::dbConnect(RPostgres::Postgres(),
+                          host = host,
+                          port = port)
+
+    .pkg_log(NOTE("Database connected"))
+
+    conn
+  }, error = function(e) {
+    .pkg_log(ERROR(
+      "Database connection failed",
+      error = conditionMessage(e)
+    ))
+
+    stop(e)
+  })
+}
+```
+
+### Exported Function Logging
+
+For user-facing functions:
+
+```{r eval=FALSE}
+#' Load data from database
+#'
+#' @param table_name Table to load
+#' @return data.frame
+#' @export
+load_table <- function(table_name) {
+  .pkg_log(NOTE(
+    "Loading table",
+    table = table_name
+  ))
+
+  start_time <- Sys.time()
+
+  result <- .fetch_table_data(table_name)
+
+  duration_ms <- as.numeric(Sys.time() - start_time) * 1000
+
+  .pkg_log(NOTE(
+    "Table loaded",
+    table = table_name,
+    rows = nrow(result),
+    duration_ms = round(duration_ms, 1)
+  ))
+
+  result
+}
+```
+
+### Conditional Logging (Performance-Sensitive)
+
+For high-frequency functions, check level before logging:
+
+```{r eval=FALSE}
+#' High-frequency function
+#' @export
+process_row <- function(row) {
+  # Only construct log event if DEBUG is enabled
+  if (.pkg_should_log(DEBUG)) {
+    .pkg_log(DEBUG(
+      "Processing row",
+      row_id = row$id,
+      row_class = class(row)
+    ))
+  }
+
+  # ... processing
+}
+
+# Helper to check if level should be logged
+.pkg_should_log <- function(level) {
+  # Check if any receiver would accept this level
+  # (Optimization to avoid constructing events that will be dropped)
+  config <- attr(.pkg_log, "config")
+  lower <- config$lower %||% attr(LOWEST, "level_number")
+
+  attr(level, "level_number") >= lower
+}
+```
+
+## Testing Code That Logs
+
+### Testing with to_itself()
+
+Capture log events for assertions:
+
+```{r eval=FALSE}
+# tests/testthat/test-database.R
+test_that("database connection logs events", {
+  # Create test logger
+  log_capture <- logger() %>%
+    with_tags(package = "mypackage") %>%
+    with_receivers(to_itself())
+
+  # Temporarily replace package logger
+  old_log <- .pkg_log
+  .pkg_log <<- log_capture
+
+  on.exit({
+    .pkg_log <<- old_log
+  })
+
+  # Call function
+  result <- tryCatch({
+    .connect_to_db(host = "localhost", port = 5432)
+  }, error = function(e) NULL)
+
+  # Verify logging occurred
+  # (to_itself returns the event invisibly)
+  expect_true(!is.null(result$message))
+  expect_match(result$message, "Connecting to database")
+})
+```
+
+### Testing Logger Configuration
+
+```{r eval=FALSE}
+test_that("user can configure logging", {
+  # Default configuration
+  mypackage_configure_logging()
+
+  config <- attr(.pkg_log, "config")
+  expect_equal(length(config$receivers), 1)
+
+  # Custom configuration
+  mypackage_configure_logging(
+    level = DEBUG,
+    file = tempfile()
+  )
+
+  config <- attr(.pkg_log, "config")
+  expect_equal(length(config$receivers), 2)
+})
+```
+
+### Suppressing Logs in Tests
+
+For tests where logging is noise:
+
+```{r eval=FALSE}
+test_that("function works correctly", {
+  # Disable logging for this test
+  old_log <- .pkg_log
+  .pkg_log <<- logger() %>%
+    with_receivers(to_console(lower = HIGHEST))  # Nothing passes
+
+  on.exit({
+    .pkg_log <<- old_log
+  })
+
+  # Test function behavior
+  result <- my_function()
+  expect_equal(result, expected_value)
+})
+```
+
+## Performance Considerations
+
+### 1. Lazy Event Construction
+
+Only construct events if they'll be logged:
+
+```{r eval=FALSE}
+# BAD: Always constructs event (expensive)
+process_items <- function(items) {
+  for (item in items) {
+    .pkg_log(DEBUG(
+      "Processing item",
+      item_id = item$id,
+      expensive_computation = compute_expensive_field(item)  # Always runs!
+    ))
+
+    # ... process item
+  }
+}
+
+# GOOD: Check level first
+process_items <- function(items) {
+  should_debug <- .pkg_should_log(DEBUG)
+
+  for (item in items) {
+    if (should_debug) {
+      .pkg_log(DEBUG(
+        "Processing item",
+        item_id = item$id,
+        expensive_computation = compute_expensive_field(item)
+      ))
+    }
+
+    # ... process item
+  }
+}
+```
+
+### 2. Use Appropriate Log Levels
+
+```{r eval=FALSE}
+# Library functions should use WARNING/ERROR for user-facing issues
+# Use DEBUG/NOTE only for developer debugging
+
+# GOOD: User-facing warning
+validate_input <- function(x) {
+  if (!is.numeric(x)) {
+    .pkg_log(WARNING("Invalid input type", expected = "numeric", got = class(x)))
+    stop("x must be numeric")
+  }
+}
+
+# GOOD: Developer debugging (low level)
+.internal_helper <- function(x) {
+  .pkg_log(DEBUG("Helper called", x = x))
+  # ...
+}
+```
+
+### 3. Minimal Overhead for Non-Logging Users
+
+If logging is disabled (no receivers), overhead should be minimal:
+
+```{r eval=FALSE}
+# Package default: only log warnings/errors
+.onLoad <- function(libname, pkgname) {
+  .pkg_log <<- logger() %>%
+    with_tags(package = pkgname) %>%
+    with_receivers(
+      to_console(lower = WARNING)  # Most logs won't execute
+    )
+}
+```
+
+## Internal vs User-Facing Logging
+
+### Internal Logging (Package Developers)
+
+For debugging package internals:
+
+```{r eval=FALSE}
+# R/internal-functions.R
+.fetch_data <- function(url) {
+  .pkg_log(DEBUG(
+    "Fetching data from API",
+    url = url,
+    timestamp = Sys.time()
+  ))
+
+  response <- httr::GET(url)
+
+  .pkg_log(DEBUG(
+    "API response received",
+    status_code = response$status_code,
+    content_length = length(response$content)
+  ))
+
+  response
+}
+```
+
+**Users enable with:**
+
+```{r eval=FALSE}
+mypackage_configure_logging(level = DEBUG)
+```
+
+### User-Facing Logging (Progress/Status)
+
+For informing users about long-running operations:
+
+```{r eval=FALSE}
+#' Download large dataset
+#' @param dataset_id Dataset identifier
+#' @export
+download_dataset <- function(dataset_id) {
+  .pkg_log(MESSAGE(
+    "Downloading dataset...",
+    dataset_id = dataset_id
+  ))
+
+  # Show progress
+  data <- .fetch_with_progress(dataset_id)
+
+  .pkg_log(MESSAGE(
+    "Download complete",
+    rows = nrow(data),
+    size_mb = round(object.size(data) / 1e6, 1)
+  ))
+
+  data
+}
+```
+
+**Enable progress messages:**
+
+```{r eval=FALSE}
+mypackage_configure_logging(level = MESSAGE)
+```
+
+## Dependency Management
+
+### Minimal Dependencies
+
+**Option 1: Suggest logthis (optional logging)**
+
+```
+Suggests:
+    logthis
+
+# In package code
+.use_logging <- function() {
+  requireNamespace("logthis", quietly = TRUE)
+}
+
+.pkg_log <- function(event) {
+  if (.use_logging()) {
+    logthis::logger()(event)
+  }
+}
+```
+
+**Option 2: Import logthis (required)**
+
+```
+Imports:
+    logthis
+
+# Normal usage throughout package
+```
+
+### Version Constraints
+
+Pin to compatible versions:
+
+```
+Imports:
+    logthis (>= 0.1.0)
+```
+
+## Examples from Real Packages
+
+### Example 1: Data Processing Package
+
+```{r eval=FALSE}
+# R/zzz.R
+.pkg_log <- NULL
+
+.onLoad <- function(libname, pkgname) {
+  .pkg_log <<- logger() %>%
+    with_tags(package = "mypackage") %>%
+    with_receivers(to_console(lower = WARNING))
+}
+
+# R/process.R
+#' Process data pipeline
+#' @export
+process_pipeline <- function(data, steps) {
+  .pkg_log(NOTE(
+    "Starting pipeline",
+    rows = nrow(data),
+    steps = length(steps)
+  ))
+
+  for (i in seq_along(steps)) {
+    .pkg_log(NOTE(
+      "Running step",
+      step = i,
+      name = steps[[i]]$name
+    ))
+
+    data <- run_step(data, steps[[i]])
+  }
+
+  .pkg_log(NOTE(
+    "Pipeline complete",
+    output_rows = nrow(data)
+  ))
+
+  data
+}
+```
+
+### Example 2: API Client Package
+
+```{r eval=FALSE}
+# R/client.R
+.api_log <- NULL
+
+.onLoad <- function(libname, pkgname) {
+  .api_log <<- logger() %>%
+    with_tags(package = "apiclient") %>%
+    with_receivers(to_console(lower = WARNING))
+}
+
+#' Call API endpoint
+#' @export
+api_call <- function(endpoint, params = list()) {
+  .api_log(DEBUG(
+    "API request",
+    endpoint = endpoint,
+    params = params
+  ))
+
+  start_time <- Sys.time()
+
+  response <- tryCatch({
+    httr::GET(paste0(.base_url, endpoint), query = params)
+  }, error = function(e) {
+    .api_log(ERROR(
+      "API request failed",
+      endpoint = endpoint,
+      error = conditionMessage(e)
+    ))
+
+    stop(e)
+  })
+
+  duration_ms <- as.numeric(Sys.time() - start_time) * 1000
+
+  .api_log(DEBUG(
+    "API response",
+    endpoint = endpoint,
+    status = response$status_code,
+    duration_ms = round(duration_ms, 1)
+  ))
+
+  if (response$status_code >= 400) {
+    .api_log(WARNING(
+      "API error response",
+      endpoint = endpoint,
+      status = response$status_code
+    ))
+  }
+
+  response
+}
+```
+
+### Example 3: Statistical Modeling Package
+
+```{r eval=FALSE}
+# R/model.R
+#' Fit statistical model
+#' @export
+fit_model <- function(formula, data, method = "ml") {
+  .pkg_log(NOTE(
+    "Fitting model",
+    formula = deparse(formula),
+    observations = nrow(data),
+    method = method
+  ))
+
+  start_time <- Sys.time()
+
+  model <- .fit_model_internal(formula, data, method)
+
+  duration_s <- as.numeric(Sys.time() - start_time)
+
+  .pkg_log(NOTE(
+    "Model fitted",
+    parameters = length(coef(model)),
+    converged = model$converged,
+    duration_seconds = round(duration_s, 2)
+  ))
+
+  if (!model$converged) {
+    .pkg_log(WARNING(
+      "Model did not converge",
+      iterations = model$iterations,
+      tolerance = model$tolerance
+    ))
+  }
+
+  model
+}
+```
+
+## Documentation
+
+### Documenting Logging Behavior
+
+In function documentation:
+
+```{r eval=FALSE}
+#' Load dataset
+#'
+#' Loads a dataset from the specified source.
+#'
+#' @param source Data source
+#' @return data.frame
+#'
+#' @section Logging:
+#' This function logs:
+#' - NOTE: Start and completion of data loading
+#' - WARNING: Data quality issues
+#' - ERROR: Loading failures
+#'
+#' Configure logging with \code{\link{mypackage_configure_logging}}.
+#'
+#' @export
+load_dataset <- function(source) {
+  # ...
+}
+```
+
+### Package-Level Logging Documentation
+
+Create a dedicated documentation page:
+
+```{r eval=FALSE}
+#' Logging in mypackage
+#'
+#' @description
+#' \code{mypackage} uses the \pkg{logthis} framework for logging.
+#'
+#' @section Configuration:
+#' Control logging with \code{\link{mypackage_configure_logging}}:
+#' \itemize{
+#'   \item \code{level = NOTE}: Show all logs
+#'   \item \code{level = WARNING}: Only warnings/errors (default)
+#'   \item \code{level = ERROR}: Only errors
+#'   \item \code{file = "path.log"}: Log to file
+#' }
+#'
+#' @section Log Levels:
+#' \code{mypackage} uses these log levels:
+#' \itemize{
+#'   \item DEBUG: Internal debugging (verbose)
+#'   \item NOTE: Informational messages
+#'   \item MESSAGE: User-facing progress messages
+#'   \item WARNING: Non-fatal issues
+#'   \item ERROR: Fatal errors
+#' }
+#'
+#' @examples
+#' # Show all logs
+#' mypackage_configure_logging(level = logthis::NOTE)
+#'
+#' # Only errors
+#' mypackage_configure_logging(level = logthis::ERROR)
+#'
+#' # Log to file
+#' mypackage_configure_logging(file = "mypackage.log")
+#'
+#' @name logging
+#' @aliases mypackage-logging
+NULL
+```
+
+## Best Practices Summary
+
+1. **Initialize logger in .onLoad()** - Package-level logger ready when package loads
+2. **Default to WARNING level** - Don't spam users' consoles
+3. **Provide configuration function** - Let users control logging
+4. **Use appropriate levels** - WARNING/ERROR for users, DEBUG/NOTE for developers
+5. **Tag with package name** - Easy filtering in multi-package projects
+6. **Test logging behavior** - Use `to_itself()` in tests
+7. **Document logging** - Explain what gets logged and how to configure
+8. **Consider performance** - Check levels before expensive event construction
+9. **Namespace properly** - Import only needed functions
+10. **Version constraints** - Pin to compatible logthis versions
+
+## See Also
+
+- `vignette("getting-started")` - Introduction to logthis
+- `vignette("patterns")` - Common logging patterns
+- `vignette("middleware")` - Middleware for context enrichment
+- Writing R Extensions (CRAN manual)
+
+## Summary
+
+Integrating logthis into R packages provides:
+
+- **Developer debugging** - Internal function tracing
+- **User feedback** - Progress and status messages
+- **Performance monitoring** - Function timing
+- **Error diagnostics** - Rich error context
+- **User configurability** - Control logging behavior
+
+Use the `.onLoad()` pattern for initialization, provide a configuration function, and document logging behavior in your package documentation.

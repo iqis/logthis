@@ -1,0 +1,980 @@
+---
+title: "Logging in Shiny Applications"
+author: "logthis Team"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Logging in Shiny Applications}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval = FALSE
+)
+library(logthis)
+```
+
+## Introduction
+
+Shiny applications present unique logging challenges: multiple concurrent users, reactive programming paradigms, and the need for both backend logging and user-facing feedback. The **logthis** and **logshiny** packages provide comprehensive solutions for these needs.
+
+This vignette covers:
+
+- User-facing alerts (inline panels, modals, toasts)
+- Backend logging strategies
+- Session tracking and user identification
+- Reactive chain debugging
+- Performance monitoring
+- Multi-user audit trails
+- GxP-compliant Shiny logging
+
+## Quick Start
+
+### Basic Shiny Logging
+
+```{r}
+library(shiny)
+library(logthis)
+
+ui <- fluidPage(
+  titlePanel("My App"),
+  actionButton("submit", "Submit")
+)
+
+server <- function(input, output, session) {
+  # Create logger in server function
+  log_this <- logger() %>%
+    with_receivers(
+      to_console(),                          # Backend logs
+      to_json() %>% on_local("app.jsonl")    # Persistent logs
+    )
+
+  observeEvent(input$submit, {
+    log_this(NOTE("Button clicked"))
+  })
+}
+
+shinyApp(ui, server)
+```
+
+## User-Facing Alerts with logshiny
+
+The **logshiny** package provides 7 receiver types for displaying log events to users:
+
+### Inline Alert Panels (Recommended)
+
+**Django/Rails-style message panels** - the cleanest approach for user feedback:
+
+```{r}
+library(shiny)
+library(logthis)
+library(logshiny)
+
+ui <- fluidPage(
+  titlePanel("Form Validation Demo"),
+
+  # Alert panel for user feedback
+  alert_panel(
+    "alerts",
+    max_alerts = 5,
+    dismissible = TRUE,
+    auto_dismiss_ms = 5000,
+    position = "top"
+  ),
+
+  textInput("email", "Email"),
+  numericInput("age", "Age", 0),
+  actionButton("submit", "Submit")
+)
+
+server <- function(input, output, session) {
+  log_this <- logger() %>%
+    with_receivers(
+      to_alert_panel("alerts"),  # User sees alerts
+      to_console()                # Developer sees logs
+    )
+
+  observeEvent(input$submit, {
+    # Validation with automatic UI feedback
+    if (!grepl("@", input$email)) {
+      log_this(ERROR("Invalid email address"))
+    } else if (input$age < 18) {
+      log_this(WARNING("Must be 18 or older"))
+    } else if (input$age > 120) {
+      log_this(WARNING("Age seems unrealistic"))
+    } else {
+      log_this(NOTE("Form submitted successfully!"))
+      # ... process form
+    }
+  })
+}
+
+shinyApp(ui, server)
+```
+
+**Alert Panel Features:**
+
+- **Config-driven UI** - Set max alerts, position, auto-dismiss in UI
+- **Full dismissal sync** - JS ↔ R callbacks ensure clean state
+- **Bootstrap styling** - Semantic colors (ERROR=red, WARNING=yellow, NOTE=blue)
+- **Auto-stacking** - New alerts at top or bottom with FIFO overflow
+- **Zero custom JS** - All wiring handled automatically
+
+### Modal Alerts
+
+For critical errors that require user acknowledgment:
+
+```{r}
+library(logshiny)
+
+server <- function(input, output, session) {
+  log_this <- logger() %>%
+    with_receivers(
+      to_shinyalert(lower = ERROR),  # Modals for errors only
+      to_console()
+    )
+
+  observeEvent(input$critical_action, {
+    result <- tryCatch({
+      perform_critical_operation()
+    }, error = function(e) {
+      log_this(ERROR(
+        "Operation failed",
+        error = conditionMessage(e)
+      ))
+      # User sees modal alert
+    })
+  })
+}
+```
+
+**Available modal receivers:**
+
+- `to_shinyalert()` - Classic modal alerts (shinyalert package)
+- `to_sweetalert()` - Modern SweetAlert2 modals (shinyWidgets package)
+
+### Toast Notifications
+
+For background notifications that don't interrupt workflow:
+
+```{r}
+library(logshiny)
+
+server <- function(input, output, session) {
+  log_this <- logger() %>%
+    with_receivers(
+      to_show_toast(lower = NOTE, upper = MESSAGE),  # Toasts for info
+      to_console()
+    )
+
+  observe({
+    # Background task completed
+    if (background_job_done()) {
+      log_this(NOTE("Report generation complete"))
+      # User sees toast notification
+    }
+  })
+}
+```
+
+**Available toast receivers:**
+
+- `to_notif()` - Base Shiny notifications (`showNotification()`)
+- `to_show_toast()` - shinyWidgets toast notifications
+- `to_toastr()` - toastr.js notifications (shinytoastr package)
+
+### Level-Based Routing
+
+Route different severity levels to different UI components:
+
+```{r}
+log_this <- logger() %>%
+  with_receivers(
+    # Errors → modal alerts (blocking)
+    to_shinyalert(lower = ERROR),
+
+    # Warnings → toast notifications (non-blocking)
+    to_show_toast(lower = WARNING, upper = WARNING),
+
+    # Info → inline alert panel (persistent)
+    to_alert_panel("info", lower = NOTE, upper = MESSAGE),
+
+    # All events → backend logs
+    to_console(),
+    to_json() %>% on_local("app.jsonl")
+  )
+
+log_this(NOTE("Process started"))       # → alert panel
+log_this(WARNING("Database slow"))      # → toast
+log_this(ERROR("Connection failed"))   # → modal alert
+```
+
+## Session Tracking
+
+Track individual user sessions for debugging and audit trails:
+
+### Basic Session Context
+
+```{r}
+add_shiny_session <- function(session) {
+  middleware(function(event) {
+    if (!is.null(session) && inherits(session, "ShinySession")) {
+      event$session_token <- session$token
+      event$client_ip <- session$request$REMOTE_ADDR %||% NA
+      event$user_agent <- session$request$HTTP_USER_AGENT %||% NA
+    }
+    event
+  })
+}
+
+server <- function(input, output, session) {
+  log_this <- logger() %>%
+    with_middleware(add_shiny_session(session)) %>%
+    with_receivers(to_console())
+
+  log_this(NOTE("Session started"))
+  # Output includes: session_token, client_ip, user_agent
+}
+```
+
+### User Authentication Context
+
+For apps with authentication (shinyauthr, auth0, etc.):
+
+```{r}
+add_shiny_user <- function(session) {
+  middleware(function(event) {
+    if (!is.null(session$user)) {
+      event$user_id <- session$user$user_id
+      event$username <- session$user$username
+      event$user_roles <- paste(session$user$roles, collapse = ",")
+    }
+    event
+  })
+}
+
+server <- function(input, output, session) {
+  # After authentication
+  session$user <- list(
+    user_id = "12345",
+    username = "john.doe",
+    roles = c("analyst", "viewer")
+  )
+
+  log_this <- logger() %>%
+    with_middleware(
+      add_shiny_session(session),
+      add_shiny_user(session)
+    ) %>%
+    with_receivers(
+      to_json() %>% on_local("user_actions.jsonl")
+    )
+
+  observeEvent(input$export_data, {
+    log_this(WARNING(
+      "Data export initiated",
+      dataset = "patient_data"
+    ))
+    # Output includes: user_id, username, user_roles
+  })
+}
+```
+
+### Session-Specific Loggers
+
+Each user session gets isolated logging (no cross-contamination):
+
+```{r}
+ui <- fluidPage(
+  alert_panel("user_alerts")
+)
+
+server <- function(input, output, session) {
+  # Each session creates its own logger instance
+  log_this <- logger() %>%
+    with_middleware(add_shiny_session(session)) %>%
+    with_receivers(
+      to_alert_panel("user_alerts"),           # Session-specific UI
+      to_json() %>% on_local("shared.jsonl")   # Shared backend log
+    )
+
+  # User A's alerts don't appear for User B
+  log_this(NOTE(paste("Welcome,", session$user$username)))
+}
+```
+
+## Reactive Chain Debugging
+
+### Reactive Context Tracking
+
+Understand which reactive expressions triggered log events:
+
+```{r}
+add_reactive_context <- middleware(function(event) {
+  if (requireNamespace("shiny", quietly = TRUE)) {
+    ctx <- tryCatch(
+      shiny::getDefaultReactiveDomain(),
+      error = function(e) NULL
+    )
+
+    if (!is.null(ctx)) {
+      event$reactive_context <- "active"
+
+      current_ctx <- tryCatch(
+        shiny::getCurrentContext(),
+        error = function(e) NULL
+      )
+
+      if (!is.null(current_ctx) && !is.null(current_ctx$label)) {
+        event$reactive_label <- current_ctx$label
+      }
+    }
+  }
+  event
+})
+
+server <- function(input, output, session) {
+  log_this <- logger() %>%
+    with_middleware(add_reactive_context) %>%
+    with_receivers(to_console())
+
+  expensive_data <- reactive({
+    log_this(DEBUG("Computing expensive data"))
+    # Output includes: reactive_label = "expensive_data"
+    # ... computation
+  })
+}
+```
+
+### Input Value Logging
+
+Debug reactive issues by logging current input values:
+
+```{r}
+add_input_values <- function(session, inputs) {
+  middleware(function(event) {
+    if (!is.null(session)) {
+      input_values <- list()
+      for (inp_id in inputs) {
+        tryCatch({
+          input_values[[inp_id]] <- session$input[[inp_id]]
+        }, error = function(e) {
+          input_values[[inp_id]] <- NA
+        })
+      }
+      event$input_values <- input_values
+    }
+    event
+  })
+}
+
+server <- function(input, output, session) {
+  log_this <- logger() %>%
+    with_middleware(
+      add_input_values(session, inputs = c("slider", "select", "text"))
+    ) %>%
+    with_receivers(to_console())
+
+  observe({
+    log_this(DEBUG("Reactive triggered"))
+    # Output includes: input_values = list(slider=50, select="A", text="foo")
+  })
+}
+```
+
+### Debugging Reactive Dependencies
+
+Log when reactive values change:
+
+```{r}
+server <- function(input, output, session) {
+  log_this <- logger() %>%
+    with_receivers(to_console(lower = DEBUG))
+
+  # Track reactive value
+  my_value <- reactiveVal(0)
+
+  observeEvent(input$increment, {
+    old_val <- my_value()
+    new_val <- old_val + 1
+    my_value(new_val)
+
+    log_this(DEBUG(
+      "Reactive value changed",
+      reactive_name = "my_value",
+      old_value = old_val,
+      new_value = new_val
+    ))
+  })
+
+  # Track when reactive expression executes
+  filtered_data <- reactive({
+    log_this(DEBUG(
+      "Filtering data",
+      filter_column = input$filter_col,
+      filter_value = input$filter_val
+    ))
+
+    data %>% filter(!!sym(input$filter_col) == input$filter_val)
+  })
+}
+```
+
+## Performance Monitoring
+
+### Timing Reactive Expressions
+
+Track how long reactive expressions take:
+
+```{r}
+add_duration <- middleware(function(event) {
+  if (!is.null(event$start_time)) {
+    duration_seconds <- as.numeric(
+      difftime(Sys.time(), event$start_time, units = "secs")
+    )
+    event$duration_seconds <- round(duration_seconds, 3)
+    event$duration_ms <- round(duration_seconds * 1000, 1)
+    event$start_time <- NULL
+  }
+  event
+})
+
+server <- function(input, output, session) {
+  log_this <- logger() %>%
+    with_middleware(add_duration) %>%
+    with_receivers(to_console())
+
+  expensive_reactive <- reactive({
+    start_time <- Sys.time()
+
+    # ... expensive computation ...
+    result <- compute_heavy_analysis(input$dataset)
+
+    log_this(NOTE(
+      "Analysis completed",
+      dataset = input$dataset,
+      start_time = start_time
+    ))
+    # Output: duration_ms = 1234.5
+
+    result
+  })
+}
+```
+
+### Performance Classification
+
+Escalate slow operations to warnings:
+
+```{r}
+classify_performance <- function(slow_threshold_ms = 1000) {
+  middleware(function(event) {
+    if (!is.null(event$duration_ms)) {
+      event$performance <- if (event$duration_ms < 100) {
+        "fast"
+      } else if (event$duration_ms < slow_threshold_ms) {
+        "acceptable"
+      } else {
+        "slow"
+      }
+
+      # Escalate slow operations
+      if (event$performance == "slow" &&
+          event$level_number < attr(WARNING, "level_number")) {
+        event$level_class <- "WARNING"
+        event$level_number <- attr(WARNING, "level_number")
+        event$escalated <- TRUE
+      }
+    }
+    event
+  })
+}
+
+log_this <- logger() %>%
+  with_middleware(
+    add_duration,
+    classify_performance(slow_threshold_ms = 1000)
+  ) %>%
+  with_receivers(
+    to_console(lower = WARNING),  # See slow operations
+    to_json() %>% on_local("performance.jsonl")
+  )
+```
+
+### Render Performance Tracking
+
+Track output render times:
+
+```{r}
+server <- function(input, output, session) {
+  log_this <- logger() %>%
+    with_middleware(add_duration) %>%
+    with_receivers(to_console())
+
+  output$plot <- renderPlot({
+    start_time <- Sys.time()
+
+    p <- ggplot(data(), aes(x, y)) + geom_point()
+
+    log_this(NOTE(
+      "Plot rendered",
+      output_id = "plot",
+      rows = nrow(data()),
+      start_time = start_time
+    ))
+
+    p
+  })
+}
+```
+
+## Developer Tools
+
+### Browser Console Logging
+
+Send R logs to browser DevTools console:
+
+```{r}
+library(logshiny)
+library(shinyjs)
+
+ui <- fluidPage(
+  useShinyjs(),  # Required!
+  titlePanel("My App")
+)
+
+server <- function(input, output, session) {
+  log_this <- logger() %>%
+    with_receivers(
+      to_console(),      # R console
+      to_js_console()    # Browser console (F12 DevTools)
+    )
+
+  observe({
+    log_this(DEBUG("Reactive value changed", value = input$slider))
+    # Appears in BOTH R console AND browser console
+  })
+}
+```
+
+**Use cases:**
+
+- Debug reactive issues in browser
+- Monitor performance in production (remote debugging)
+- See client-side timing vs server-side timing
+
+## Complete Shiny Logger Factory
+
+A production-ready logger factory for Shiny apps:
+
+```{r}
+#' Create production Shiny logger with full context
+#'
+#' @param session Shiny session object
+#' @param app_name Application name
+#' @param app_version Application version
+#' @param log_dir Directory for log files
+#' @param console_level Minimum level for console output
+#' @return Configured logger
+create_shiny_logger <- function(session,
+                                app_name,
+                                app_version,
+                                log_dir = "logs",
+                                console_level = WARNING) {
+  # Ensure log directory exists
+  if (!dir.exists(log_dir)) {
+    dir.create(log_dir, recursive = TRUE)
+  }
+
+  logger() %>%
+    with_middleware(
+      # Shiny context
+      add_shiny_session(session),
+      add_shiny_user(session),
+      add_reactive_context,
+
+      # Performance
+      add_duration,
+      classify_performance(),
+
+      # Application context
+      middleware(function(event) {
+        event$app_name <- app_name
+        event$app_version <- app_version
+        event$environment <- Sys.getenv("ENVIRONMENT", "production")
+        event
+      })
+    ) %>%
+    with_receivers(
+      # Console (warnings and above)
+      to_console(lower = console_level),
+
+      # JSON file (all events, structured)
+      to_json() %>% on_local(file.path(log_dir, "app.jsonl")),
+
+      # Text file (readable format)
+      to_text(template = "{time} [{level}] {message}") %>%
+        on_local(file.path(log_dir, "app.log"))
+    )
+}
+
+# Usage
+server <- function(input, output, session) {
+  log_this <- create_shiny_logger(
+    session = session,
+    app_name = "my-shiny-app",
+    app_version = "1.0.0",
+    console_level = WARNING
+  )
+
+  # Use throughout app
+  log_this(NOTE("App session started"))
+}
+```
+
+## Multi-User Audit Trails
+
+Track all user actions across sessions:
+
+### Basic Audit Trail
+
+```{r}
+server <- function(input, output, session) {
+  # Create audit logger
+  log_audit <- logger() %>%
+    with_middleware(
+      add_shiny_session(session),
+      add_shiny_user(session)
+    ) %>%
+    with_tags("audit") %>%
+    with_receivers(
+      to_json() %>% on_local("audit.jsonl"),
+      to_console(lower = WARNING)
+    )
+
+  # Log user actions
+  observeEvent(input$load_data, {
+    log_audit(NOTE(
+      "Data loaded",
+      dataset_id = input$dataset_selector,
+      action = "load_data"
+    ))
+  })
+
+  observeEvent(input$export, {
+    log_audit(WARNING(
+      "Data export",
+      dataset_id = input$dataset_selector,
+      format = input$export_format,
+      action = "export_data"
+    ))
+  })
+
+  observeEvent(input$delete, {
+    log_audit(ERROR(
+      "Data deletion",
+      dataset_id = input$dataset_selector,
+      action = "delete_data",
+      requires_approval = TRUE
+    ))
+  })
+
+  # Log session lifecycle
+  session$onSessionEnded(function() {
+    log_audit(NOTE("Session ended"))
+  })
+}
+```
+
+## GxP-Compliant Shiny Logging
+
+For pharmaceutical and clinical applications requiring 21 CFR Part 11 compliance:
+
+```{r}
+library(shiny)
+library(logthis)
+
+ui <- fluidPage(
+  titlePanel("Clinical Data Review (GxP)"),
+  sidebarLayout(
+    sidebarPanel(
+      selectInput("study", "Study:", choices = c("TRIAL-001", "TRIAL-002")),
+      actionButton("load", "Load Data"),
+      actionButton("approve", "Approve Dataset")
+    ),
+    mainPanel(
+      tableOutput("data_table")
+    )
+  )
+)
+
+server <- function(input, output, session) {
+  # Authentication (simplified for example)
+  session$user <- list(
+    user_id = "USER-12345",
+    username = "jane.scientist",
+    roles = c("data_reviewer", "approver")
+  )
+
+  # GxP-compliant logger
+  log_gxp <- logger() %>%
+    with_middleware(
+      # Identity
+      add_shiny_session(session),
+      add_shiny_user(session),
+
+      # GxP metadata
+      middleware(function(event) {
+        event$system_id <- "SHINY-APP-PROD-001"
+        event$system_validated <- TRUE
+        event$timestamp_iso <- format(event$time, "%Y-%m-%dT%H:%M:%S%z")
+        event$data_integrity <- TRUE
+        event
+      })
+    ) %>%
+    with_tags("GxP", "audit_trail", "21CFR11", "ALCOA") %>%
+    with_receivers(
+      # Immutable audit trail (JSONL)
+      to_json() %>% on_local("gxp_audit.jsonl"),
+
+      # Human-readable audit log
+      to_text(template = "{timestamp_iso} | {user_id} | {action} | {level} | {message}") %>%
+        on_local("gxp_audit.log"),
+
+      # Console for monitoring
+      to_console(lower = WARNING)
+    )
+
+  # Log all critical actions
+  observeEvent(input$load, {
+    log_gxp(WARNING(
+      "Data load initiated",
+      study_id = input$study,
+      action = "load_data",
+      data_source = "clinical_database"
+    ))
+  })
+
+  observeEvent(input$approve, {
+    log_gxp(CRITICAL(
+      "Dataset approved",
+      study_id = input$study,
+      action = "approve_dataset",
+      requires_signature = TRUE,
+      regulatory_impact = TRUE
+    ))
+  })
+
+  # Log session lifecycle for audit
+  log_gxp(NOTE(
+    "Session started",
+    action = "session_start"
+  ))
+
+  session$onSessionEnded(function() {
+    log_gxp(NOTE(
+      "Session ended",
+      action = "session_end"
+    ))
+  })
+}
+
+shinyApp(ui, server)
+```
+
+**GxP Compliance Features:**
+
+- **Attributable** - User ID and username in every event
+- **Legible** - Timestamp and human-readable messages
+- **Contemporaneous** - Automatic ISO 8601 timestamps
+- **Original** - Immutable JSONL format
+- **Accurate** - System validation metadata
+- **Complete** - Session lifecycle tracking
+
+## Best Practices
+
+### 1. Create Loggers in Server Function
+
+```{r}
+# GOOD: Logger per session
+server <- function(input, output, session) {
+  log_this <- logger() %>%
+    with_middleware(add_shiny_session(session)) %>%
+    with_receivers(to_console())
+}
+
+# BAD: Global logger (no session context)
+log_this <- logger() %>% with_receivers(to_console())
+
+server <- function(input, output, session) {
+  # Session context not captured
+}
+```
+
+### 2. Use Scope-Based Masking for Modules
+
+```{r}
+# In module
+my_module_server <- function(id, parent_logger) {
+  moduleServer(id, function(input, output, session) {
+    # Module-specific logger
+    log_this <- parent_logger %>%
+      with_tags(module = "my_module") %>%
+      with_receivers(
+        to_text() %>% on_local("modules/my_module.log")
+      )
+
+    log_this(NOTE("Module initialized"))
+  })
+}
+```
+
+### 3. Separate User Alerts from Backend Logs
+
+```{r}
+server <- function(input, output, session) {
+  # User-facing logger (warnings and above)
+  log_user <- logger() %>%
+    with_receivers(
+      to_alert_panel("alerts", lower = WARNING)
+    )
+
+  # Developer logger (all levels)
+  log_dev <- logger() %>%
+    with_middleware(add_shiny_session(session)) %>%
+    with_receivers(
+      to_console(lower = DEBUG),
+      to_json() %>% on_local("dev.jsonl")
+    )
+
+  observeEvent(input$submit, {
+    log_dev(DEBUG("Submit button clicked"))
+
+    result <- tryCatch({
+      process_form(input)
+    }, error = function(e) {
+      log_dev(ERROR("Form processing failed", error = conditionMessage(e)))
+      log_user(ERROR("An error occurred. Please try again."))
+    })
+  })
+}
+```
+
+### 4. Log Session Lifecycle
+
+```{r}
+server <- function(input, output, session) {
+  log_this <- logger() %>%
+    with_middleware(add_shiny_session(session)) %>%
+    with_receivers(to_console())
+
+  # Session start
+  log_this(NOTE("Session started"))
+
+  # Session end
+  session$onSessionEnded(function() {
+    log_this(NOTE("Session ended"))
+  })
+}
+```
+
+### 5. Environment-Specific Configuration
+
+```{r}
+create_app_logger <- function(session) {
+  env <- Sys.getenv("ENVIRONMENT", "development")
+
+  base_logger <- logger() %>%
+    with_middleware(add_shiny_session(session))
+
+  if (env == "production") {
+    base_logger %>%
+      with_receivers(
+        to_console(lower = ERROR),
+        to_json() %>% on_s3(bucket = "prod-logs", key = "app.jsonl")
+      )
+  } else {
+    base_logger %>%
+      with_receivers(
+        to_console(lower = DEBUG),
+        to_json() %>% on_local("dev.jsonl")
+      )
+  }
+}
+```
+
+## Troubleshooting
+
+### Alert Panel Not Appearing
+
+**Problem:** `to_alert_panel()` receiver not showing alerts
+
+**Solutions:**
+
+1. **Check output_id match:**
+   ```{r}
+   # UI
+   alert_panel("my_alerts")  # ID must match
+
+   # Server
+   to_alert_panel("my_alerts")  # Same ID
+   ```
+
+2. **Check level filtering:**
+   ```{r}
+   to_alert_panel("alerts", lower = WARNING)  # Only WARNING and above
+   log_this(NOTE("This won't appear"))       # NOTE < WARNING
+   ```
+
+### Session Context Not Captured
+
+**Problem:** `session_token` or `user_id` is NA
+
+**Solution:** Pass session to middleware:
+
+```{r}
+# WRONG
+add_shiny_session()  # No session provided!
+
+# CORRECT
+add_shiny_session(session)  # Pass session
+```
+
+### Reactive Context Label Missing
+
+**Problem:** `reactive_label` is NULL
+
+**Solution:** This is normal for some reactive contexts. Not all reactives have labels.
+
+```{r}
+# Labels available for:
+reactive({ ... })  # Named reactives
+observe({ ... })   # Observers
+
+# Labels NOT available for:
+# - Anonymous reactive expressions
+# - Some internal Shiny reactives
+```
+
+## See Also
+
+- `vignette("middleware")` - Middleware patterns and examples
+- `vignette("patterns")` - Common logging patterns
+- `vignette("getting-started")` - Introduction to logthis
+- **logshiny package** - Shiny receivers and UI components
+
+## Summary
+
+Logging in Shiny applications with logthis and logshiny provides:
+
+- **User-facing alerts** - Inline panels, modals, toasts with level-based routing
+- **Session tracking** - Isolate logs per user session with automatic context
+- **Reactive debugging** - Track reactive execution and input values
+- **Performance monitoring** - Time reactive expressions and renders
+- **Audit trails** - Complete multi-user action logging
+- **GxP compliance** - ALCOA+ principles for pharmaceutical applications
+
+Use the logger factory pattern for consistent configuration across your application.
