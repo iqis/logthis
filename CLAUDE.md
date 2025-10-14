@@ -1088,6 +1088,37 @@ devtools::test()
 
 ---
 
+## Documentation Structure
+
+### Dual README Pattern
+
+**CRITICAL:** This project has TWO README files that must be kept in sync:
+
+1. **Root README:** `/home/siqi/projects/logthis/README.md`
+   - Displayed on GitHub at https://github.com/iqis/logthis
+   - Asset paths relative to repository root: `logthis/man/figures/logo.svg`
+
+2. **Package README:** `/home/siqi/projects/logthis/logthis/README.md`
+   - Part of the R package, used by pkgdown
+   - Asset paths relative to package directory: `man/figures/logo.svg`
+
+**When updating README content:**
+- Make changes to `logthis/README.md` first (package README)
+- Copy to root: `cp logthis/README.md README.md`
+- Fix asset paths in root README: change `man/figures/` → `logthis/man/figures/`
+- Commit both files together
+
+**Path translation table:**
+```
+Package README (logthis/README.md) → Root README (README.md)
+man/figures/logo.svg               → logthis/man/figures/logo.svg
+articles/getting-started.html      → logthis/articles/getting-started.html (usually unchanged)
+```
+
+**Why this matters:** GitHub displays the root README, but we maintain content in the package README for pkgdown compatibility. Forgetting to sync or using wrong paths breaks logo/image display on GitHub.
+
+---
+
 ## Maintenance Notes for AI Assistants
 
 **When making changes:**
