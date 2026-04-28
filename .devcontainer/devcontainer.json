@@ -12,6 +12,9 @@
     }
   },
   "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "remoteEnv": {
+    "XDG_CONFIG_HOME": "${containerEnv:HOME}"
+  },
   "customizations": {
     "vscode": {
       "extensions": [
